@@ -23,6 +23,10 @@ class EvaluationRequest(BaseModel):
 
 engine = IDCS_Engine()
 
+@app.get("/")
+def read_root():
+    return {"status": "online", "message": "Welcome to the IDCS API"}
+
 @app.post("/evaluate")
 def evaluate_claim(req: EvaluationRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == req.user_id).first()

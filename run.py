@@ -1,0 +1,42 @@
+import subprocess
+import time
+import sys
+
+def start_idcs():
+    print("🚀 Starting IDCS System...")
+
+    # 1. Start the FastAPI Backend
+    backend_process = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "main:app", "--port", "8000", "--reload"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True
+    )
+    print("✅ Backend initiating on http://127.0.0.1:8000")
+
+    # Give the backend 2 seconds to bind the port
+    time.sleep(2)
+
+    # 2. Start the Streamlit Frontend
+    frontend_process = subprocess.Popen(
+        [sys.executable, "-m", "streamlit", "run", "app.py", "--server.port", "8501"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True
+    )
+    print("✅ Frontend initiating on http://localhost:8501")
+
+    print("\n💡 System is LIVE. Press Ctrl+C to shut down both.")
+
+    try:
+        # Keep the script running to monitor processes
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n🛑 Shutting down safely...")
+        backend_process.terminate()
+        frontend_process.terminate()
+        print("👋 Goodbye!")
+
+if __name__ == "__main__":
+    start_idcs()
