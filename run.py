@@ -7,7 +7,7 @@ def start_idcs():
 
     # 1. Start the FastAPI Backend
     backend_process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "main:app", "--port", "8000", "--reload"],
+        [sys.executable, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True
@@ -19,7 +19,7 @@ def start_idcs():
 
     # 2. Start the Streamlit Frontend
     frontend_process = subprocess.Popen(
-        [sys.executable, "-m", "streamlit", "run", "app.py", "--server.port", "8501"],
+        [sys.executable, "-m", "streamlit", "run", "app.py", "--server.address", "0.0.0.0", "--server.port", "8501"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True
