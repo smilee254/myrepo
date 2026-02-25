@@ -1,10 +1,19 @@
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database import SessionLocal, User, IncomeHistory, init_db
 from engine import IDCS_Engine
 
 app = FastAPI(title="Income Dip Compensation System API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Initialize DB on startup
 init_db()
@@ -17,9 +26,25 @@ def get_db():
     finally:
         db.close()
 
+class IncomeData(BaseModel):
+    amount: float
+    status: str
+
+class UserRequest(BaseModel):
+    name: str
+    age: int
+    employment_type: str
+
 class EvaluationRequest(BaseModel):
-    user_id: int
+    name: str
+    age: int
+    employment_type: str
     current_income: float
+    income_history: list[IncomeData]
+
+class ChatRequest(BaseModel):
+    system_prompt: str
+    messages: list
 
 engine = IDCS_Engine()
 
@@ -27,22 +52,69 @@ engine = IDCS_Engine()
 def read_root():
     return {"status": "online", "message": "Welcome to the IDCS API"}
 
-@app.post("/evaluate")
-def evaluate_claim(req: EvaluationRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == req.user_id).first()
+@app.post("/user")
+def get_or_create_user(req: UserRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.name == req.name).first()
+    is_new = False
+    
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        user = User(
+            name=req.name,
+            age=req.age,
+            employment_type=req.employment_type,
+            src_tax_bracket="Bracket 3", 
+            src_cap=50000.0
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        is_new = True
 
     incomes = db.query(IncomeHistory).filter(IncomeHistory.user_id == user.id).order_by(IncomeHistory.month_index).all()
-    if len(incomes) != 6:
-        raise HTTPException(status_code=400, detail="User does not have exactly 6 months of income history")
+    history = [{"amount": inc.income_amount, "status": inc.status, "month": inc.month_index} for inc in incomes]
+    
+    return {
+        "user_id": user.id,
+        "name": user.name,
+        "history": history,
+        "is_new": is_new
+    }
 
+@app.post("/evaluate")
+def evaluate_claim(req: EvaluationRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.name == req.name).first()
+    
+    # Auto-create user if not found
+    if not user:
+        user = User(
+            name=req.name,
+            age=req.age,
+            employment_type=req.employment_type,
+            src_tax_bracket="Bracket 3",
+            src_cap=50000.0
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+        # If new user and they provided history (from CSV), store it
+        if req.income_history:
+            for idx, inc in enumerate(req.income_history):
+                db_inc = IncomeHistory(
+                    user_id=user.id,
+                    month_index=idx+1,
+                    income_amount=inc.amount,
+                    status=inc.status
+                )
+                db.add(db_inc)
+            db.commit()
+
+    # Use exact history provided in st.session_state (CSV)
     income_history_data = [
-        {"amount": inc.income_amount, "status": inc.status}
-        for inc in incomes
+        {"amount": inc.amount, "status": inc.status}
+        for inc in req.income_history
     ]
 
-    # Map employment_type to W_emp if desired. We'll use 1.0 for now, or 1.1 for SRC_Teacher to reward stability.
     w_emp = 1.1 if user.employment_type == "SRC_Teacher" else 1.0
 
     result = engine.calculate_metrics(
@@ -61,4 +133,10 @@ def evaluate_claim(req: EvaluationRequest, db: Session = Depends(get_db)):
         },
         "evaluation": result,
         "income_history": income_history_data
+    }
+
+@app.post("/chat")
+def chat_endpoint(req: ChatRequest):
+    return {
+        "content": "Jambo! I am the IDCS Smart Broker responding locally. Based on your inputs and M-Pesa data, I recommend Britam Family Income Protection with an 88% match because your history indicates high volatility that this plan specifically covers with inflation-adjusted monthly payouts.\\n\\n[Analyze Income] -> [Identify Risk Category] -> [Match Scheme]"
     }

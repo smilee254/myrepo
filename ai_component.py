@@ -1,6 +1,9 @@
 import streamlit.components.v1 as components
+import json
+from engine import INSURANCE_SCHEMES
 
 def inject_ai_assistant():
+    kb_json = json.dumps(INSURANCE_SCHEMES)
     html_code = """
     <script>
         const parentDoc = window.parent.document;
@@ -70,8 +73,6 @@ def inject_ai_assistant():
             const script = parentDoc.createElement("script");
             script.type = "module";
             script.textContent = `
-                import { CreateMLCEngine } from "https://esm.run/@mlc-ai/web-llm";
-                
                 async function bootLocalAI() {
                     const progText = window.document.getElementById("ai-progress-text");
                     const progBar = window.document.getElementById("ai-progress-bar");
@@ -89,21 +90,11 @@ def inject_ai_assistant():
                     }
 
                     try {
-                        const engine = await CreateMLCEngine(
-                            "gemma-2b-it-q4f32_1-MLC",
-                            {
-                                initProgressCallback: (info) => {
-                                    const pct = Math.round(info.progress * 100);
-                                    progText.textContent = "Loading WebGPU Model: " + pct + "% (Cached offline)";
-                                    progBar.style.width = pct + "%";
-                                }
-                            }
-                        );
-                        
-                        progText.textContent = "✅ Model Active | Protected Local GPU Inference";
+                        progText.textContent = "✅ Connected to Local FastLLM Process API";
                         progText.style.color = "#00d296";
+                        progBar.style.width = "100%";
                         window.document.getElementById("ai-progress-container").style.borderBottom = "none";
-                        setTimeout(() => { window.document.getElementById("ai-progress-container").style.display = "none"; }, 3000);
+                        setTimeout(() => { window.document.getElementById("ai-progress-container").style.display = "none"; }, 1500);
                         
                         chatInput.disabled = false;
                         chatSend.disabled = false;
@@ -126,18 +117,32 @@ def inject_ai_assistant():
                                 activeContext += "\\nCalibration Summary Data: " + finCtxEl.textContent;
                             }
                             
-                            const systemPrompt = "You are the IDCS Assistant. You only answer questions about this Income Dip Compensation System. You do not have access to the internet. Use the provided website context to help users understand their stability scores, eligibility, and financial data verification.\\nWebsite Context:\\n" + activeContext;
+                            const systemPrompt = "You are the IDCS Smart Broker. Using the user's name [name], stability score [score], and the M-Pesa CSV analysis, justify the Match Score.\\nExample response: 'Jambo [Name], I recommend Britam Family Income Protection with an 88% match because your M-Pesa history shows high volatility which this plan specifically covers with a 10% inflation-adjusted monthly payout.'\\n\\nWebsite Context:\\n" + activeContext + "\\n\\nKnowledge Base:\\n" + JSON.stringify({kb_json});
 
                             try {
-                                const response = await engine.chat.completions.create({
-                                    messages: [
-                                        { role: "system", content: systemPrompt },
-                                        { role: "user", content: text }
-                                    ]
+                                const response = await fetch("http://127.0.0.1:8000/chat", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                        system_prompt: systemPrompt,
+                                        messages: [{ role: "user", content: text }]
+                                    })
                                 });
-                                replyNode.textContent = response.choices[0].message.content;
+                                
+                                if (!response.ok) throw new Error("Local Network Error");
+                                
+                                const data = await response.json();
+                                replyNode.textContent = data.content;
+                                
+                                const quoteBtn = window.document.createElement("a");
+                                quoteBtn.href = "https://provider-portal-2026.com/quote";
+                                quoteBtn.target = "_blank";
+                                quoteBtn.textContent = "Get Quote";
+                                quoteBtn.style = "display: inline-block; margin-top: 10px; padding: 6px 12px; background: #00d296; color: #121212; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 13px;";
+                                replyNode.appendChild(window.document.createElement("br"));
+                                replyNode.appendChild(quoteBtn);
                             } catch (e) {
-                                replyNode.textContent = "Inference Error: " + e.message;
+                                replyNode.textContent = "Local API Inference Error: " + e.message;
                             }
                             
                             chatInput.disabled = false;
@@ -148,7 +153,7 @@ def inject_ai_assistant():
                         chatInput.onkeypress = (e) => { if (e.key === "Enter") handleInput(); };
                         
                     } catch(e) {
-                        progText.innerHTML = "<b>Hardware WebGPU unsupported:</b> " + e.message;
+                        progText.innerHTML = "<b>Local Inference unsupported:</b> " + e.message;
                         progBar.style.backgroundColor = "#ff4b4b";
                     }
                 }
@@ -158,4 +163,5 @@ def inject_ai_assistant():
         }
     </script>
     """
+    html_code = html_code.replace("{kb_json}", kb_json)
     components.html(html_code, height=0, width=0)

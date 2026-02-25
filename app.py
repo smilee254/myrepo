@@ -3,6 +3,8 @@ import requests
 import pandas as pd
 import plotly.graph_objects as go
 from data_handler import process_financial_data
+import os
+from pdf_generator import generate_stability_passport, submit_to_provider_api
 
 st.set_page_config(page_title="IDCS Dashboard", page_icon="🏦", layout="wide")
 
@@ -116,11 +118,44 @@ inject_ai_assistant()
 # -- SIDEBAR --
 with st.sidebar:
     st.markdown("<h2 class='mint-text'>IDCS Portal</h2>", unsafe_allow_html=True)
-    st.markdown("User Profile & Input")
+    st.markdown("### User Identity")
     
-    user_id = st.number_input("Enter User ID", min_value=1, step=1, value=1)
-    
+    st.session_state.full_name = st.text_input("Full Name", value=st.session_state.get("full_name", ""))
+    st.session_state.age = st.slider("Age", 18, 65, value=st.session_state.get("age", 30))
+    st.session_state.employment_status = st.selectbox("Employment Status", ["Public Full-Time", "Private Contract", "Self-Employed/Jua Kali", "Unemployed"], index=0)
+    st.session_state.dependants = st.number_input("Dependants", min_value=0, step=1, value=st.session_state.get("dependants", 0))
+
     st.markdown("---")
+    st.markdown("### Profile Sync")
+    
+    if st.button("Check / Initialize DB Profile", width=True):
+        if st.session_state.full_name:
+            try:
+                user_res = requests.post("http://127.0.0.1:8000/user", json={
+                    "name": st.session_state.full_name,
+                    "age": st.session_state.age,
+                    "employment_type": st.session_state.employment_status
+                })
+                if user_res.status_code == 200:
+                    udata = user_res.json()
+                    st.session_state.current_user_id = udata["user_id"]
+                    if udata["is_new"]:
+                        st.success("New profile initialized! Please upload CSVs.")
+                        st.session_state["financial_data"] = None
+                    else:
+                        st.success("Profile loaded from DB!")
+                        if udata["history"]:
+                            df_hist = pd.DataFrame(udata["history"])
+                            df_hist['Month'] = df_hist['month']
+                            df_hist['Total Income'] = df_hist['amount']
+                            st.session_state["financial_data"] = df_hist
+            except Exception as e:
+                st.error("Could not connect to backend.")
+        else:
+            st.error("Please enter a Full Name.")
+            
+    st.markdown("---")
+    st.markdown("### Claim Evaluation")
     current_income = st.number_input("Current Month Income (KES)", min_value=0.0, step=1000.0, value=40000.0)
     
     st.markdown("<br>", unsafe_allow_html=True)
@@ -142,9 +177,9 @@ st.markdown("<h2 style='color: #fff; margin-bottom: 20px;'>Financial Data Verifi
 
 col1, col2 = st.columns(2)
 with col1:
-    mpesa_upload = st.file_uploader("Upload M-Pesa Statement (CSV)", type=["csv"], key="mpesa")
+    mpesa_upload = st.file_uploader("Upload M-Pesa Statement (CSV or PDF)", type=["csv", "pdf"], key="mpesa")
 with col2:
-    bank_upload = st.file_uploader("Upload Bank Statement (CSV)", type=["csv"], key="bank")
+    bank_upload = st.file_uploader("Upload Bank Statement (CSV or PDF)", type=["csv", "pdf"], key="bank")
 
 if st.button("Process Data", type="primary"):
     st.session_state["financial_data"] = process_financial_data(mpesa_upload, bank_upload)
@@ -155,37 +190,62 @@ if "financial_data" in st.session_state and st.session_state["financial_data"] i
     with st.expander("Advanced Calibration Settings", expanded=True):
         stability_sensitivity = st.slider("Stability Sensitivity", min_value=0.1, max_value=1.0, value=0.8, step=0.05)
     
-    # Calculate Moving Average (mu) of the first 5 months
-    first_5 = df_fin.head(5)
-    mu = first_5['Total Income'].mean()
+    # Calculate Historical Baseline (mu) of all 6 months
+    mu = df_fin['Total Income'].mean()
     
-    # Set the 6th month as 'Current Month'
-    current_month_income = df_fin.iloc[5]['Total Income'] if len(df_fin) >= 6 else df_fin.iloc[-1]['Total Income']
+    # Use manual input for the current month dip check
+    current_month_income = current_income
     
     # Variance from Average
     df_fin['Variance from Average'] = df_fin['Total Income'] - mu
     
     dip_predicted = current_month_income < (stability_sensitivity * mu)
     
+    # Visual Feedback
+    col_h1, col_h2 = st.columns(2)
+    with col_h1:
+        st.metric("Historical 6-Month Avg", f"KES {mu:,.2f}")
+    with col_h2:
+        st.metric("Current Month Input", f"KES {current_month_income:,.2f}")
+        
     if dip_predicted:
-        st.error(f"🚨 **Dip Predicted!** Current Month Income (KES {current_month_income:,.2f}) is below the {stability_sensitivity*100:.0f}% threshold of the 5-month moving average (KES {mu:,.2f}).")
+        st.error(f"🚨 **Dip Predicted!** Current Month Income (KES {current_month_income:,.2f}) is below the {stability_sensitivity*100:.0f}% threshold of the 6-month moving average (KES {mu:,.2f}).")
     else:
-        st.success(f"✅ **Stable Income!** Current Month Income (KES {current_month_income:,.2f}) is above the {stability_sensitivity*100:.0f}% threshold of the 5-month moving average (KES {mu:,.2f}).")
+        st.success(f"✅ **Stable Income!** Current Month Income (KES {current_month_income:,.2f}) is within safe bounds above the {stability_sensitivity*100:.0f}% threshold of the 6-month average (KES {mu:,.2f}).")
         
     st.markdown("### Calibration Summary")
     st.dataframe(df_fin[['Month', 'Total Income', 'Variance from Average']], width='stretch')
     
     # Generate context for AI Assistant
-    variance_str = ", ".join([f"M{row['Month']} (Var: {row['Variance from Average']:,.0f})" for _, row in df_fin.iterrows()])
-    fin_ai_ctx = f"Financial Review: 5-mo Average is KES {mu:,.2f}. Month 6 Income is KES {current_month_income:,.2f}. Sensitivity Check Triggered Dip: {dip_predicted}. Monthly variances from average computed from CSV data: {variance_str}."
+    pct_diff = ((mu - current_month_income) / mu) * 100 if mu > 0 else 0
+    dip_status = f"{pct_diff:.1f}% dip" if current_month_income < mu else "no significant dip"
+    variance_str = ", ".join([f"M{int(row['Month'])} (Var: {row['Variance from Average']:,.0f})" for _, row in df_fin.iterrows()])
+    
+    fin_ai_ctx = f"Financial Review: 6-mo Baseline Average is KES {mu:,.2f}. Manual Input for Current Month is KES {current_month_income:,.2f}. Based on the KES {current_month_income:,.0f} you entered, you have a {dip_status} compared to your 6-month average. Sensitivity Check Triggered Dip: {dip_predicted}. Monthly variances from average computed from uploaded data: {variance_str}."
     if dip_predicted:
-        fin_ai_ctx += " Note: For low scores or drops, tell the user specific details e.g., 'Your income dropped in month 6 due to lower overall transactions/funds received compared to the 5-month average of KES " + f"{mu:,.2f}'."
+        fin_ai_ctx += " Note: For low scores or drops, emphasize: 'Based on the KES " + f"{current_month_income:,.0f} you entered, you have a {pct_diff:.1f}% dip compared to your 6-month average of KES {mu:,.2f}.'"
     st.markdown(f"<div id='financial-verification-context' style='display:none;'>{fin_ai_ctx}</div>", unsafe_allow_html=True)
     st.markdown("---")
 
 if check_btn or st.session_state.get('last_user'):
-    st.session_state.last_user = user_id
+    st.session_state.last_user = st.session_state.get('full_name')
     
+    if not st.session_state.get('full_name'):
+        st.error("👈 Please enter your Full Name in the sidebar.")
+        st.stop()
+        
+    hist_payload = []
+    if "financial_data" in st.session_state and st.session_state["financial_data"] is not None:
+        df_fin = st.session_state["financial_data"]
+        for _, row in df_fin.iterrows():
+            hist_payload.append({
+                "amount": float(row["Total Income"]),
+                "status": row.get("status", "Paid") if "status" in row else "Paid"
+            })
+    else:
+        st.warning("Please upload your M-Pesa CSV or Load your DB Profile before evaluating.")
+        st.stop()
+
     income_to_evaluate = current_income
     if st.session_state.simulate_shock:
         income_to_evaluate = current_income * 0.7
@@ -194,7 +254,13 @@ if check_btn or st.session_state.get('last_user'):
         try:
             response = requests.post(
                 "http://127.0.0.1:8000/evaluate",
-                json={"user_id": user_id, "current_income": income_to_evaluate}
+                json={
+                    "name": st.session_state.full_name,
+                    "age": st.session_state.age,
+                    "employment_type": st.session_state.employment_status,
+                    "current_income": income_to_evaluate,
+                    "income_history": hist_payload
+                }
             )
             
             if response.status_code == 200:
@@ -206,8 +272,32 @@ if check_btn or st.session_state.get('last_user'):
                 # Header Micro-humanization
                 st.markdown(f"<h3 style='color: #fff; margin-bottom: 24px;'>Habari, {user['name']}. Let's check your income health today.</h3>", unsafe_allow_html=True)
                 
+                from engine import INSURANCE_SCHEMES, calculate_match_score
+                
+                user_profile = {
+                    'employment_status': st.session_state.get('employment_status', ''),
+                    'dependants': st.session_state.get('dependants', 0),
+                    'mu': eval_data['mu'],
+                    'sigma': eval_data['sigma']
+                }
+                
+                scored_schemes = []
+                for s_name, s_data in INSURANCE_SCHEMES.items():
+                    score = calculate_match_score(user_profile, s_name)
+                    annual_prem = f"KES {s_data['premium']*12:,.0f}" if s_data['premium'] else "2.75% of Income"
+                    scored_schemes.append({
+                        "Scheme Name": s_name,
+                        "Annual Premium": annual_prem,
+                        "Coverage Limit": s_data['key_benefit'],
+                        "Match Score": int(score)
+                    })
+                    
+                scored_schemes = sorted(scored_schemes, key=lambda x: x['Match Score'], reverse=True)
+                top_matches_str = ", ".join([f"{s['Scheme Name']} ({s['Match Score']}%)" for s in scored_schemes[:2]])
+                
                 # Context integration for AI (Passed from Python Backend to Client-side Window Context)
-                ai_ctx = f"User: {user['name']} ({user['employment_type']}). Income Checked: KES {income_to_evaluate:,.2f}. Stability Score: {eval_data['stability_score']:.1f}/100. Average Income: KES {eval_data['mu']:,.2f}. Population Sigma: KES {eval_data['sigma']:,.2f}. Dip Detected: {eval_data['dip_detected']}. Paid Months: {eval_data['paid_months']}. Eligible: {eval_data['eligible']}."
+                identity_ctx = f"Full Name: {st.session_state.get('full_name', '')}, Age: {st.session_state.get('age', '')}, Employment Status: {st.session_state.get('employment_status', '')}, Dependants: {st.session_state.get('dependants', '')}."
+                ai_ctx = f"User Profile: {identity_ctx} Model User: {user['name']} ({user['employment_type']}). Income Checked: KES {income_to_evaluate:,.2f}. Stability Score: {eval_data['stability_score']:.1f}/100. Average Income: KES {eval_data['mu']:,.2f}. Population Sigma: KES {eval_data['sigma']:,.2f}. Dip Detected: {eval_data['dip_detected']}. Eligible: {eval_data['eligible']}. Top Matches: {top_matches_str}."
                 if eval_data['eligible']:
                     ai_ctx += f" Approved Payout: KES {eval_data['payout']:,.2f}."
                 st.markdown(f"<div id='idcs-ai-context' style='display:none;'>{ai_ctx}</div>", unsafe_allow_html=True)
@@ -215,8 +305,42 @@ if check_btn or st.session_state.get('last_user'):
                 if st.session_state.simulate_shock:
                     st.warning(f"⚠️ Simulated Mode Active! Evaluating with artificial 30% drop (Income = KES {income_to_evaluate:,.2f})")
 
+                # The Stability Gauge Chart
+                col_g1, col_g2, col_g3 = st.columns([1, 2, 1])
+                with col_g2:
+                    fig_gauge = go.Figure(go.Indicator(
+                        mode = "gauge+number",
+                        value = eval_data['stability_score'],
+                        title = {'text': "Income Stability Index", 'font': {'color': 'white'}},
+                        domain = {'x': [0, 1], 'y': [0, 1]},
+                        gauge = {
+                            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "white"},
+                            'bar': {'color': "rgba(255,255,255,0.3)"},
+                            'bgcolor': "rgba(0,0,0,0)",
+                            'borderwidth': 2,
+                            'bordercolor': "gray",
+                            'steps': [
+                                {'range': [0, 40], 'color': "red"},
+                                {'range': [40, 75], 'color': "orange"},
+                                {'range': [75, 100], 'color': "green"}
+                            ],
+                            'threshold': {
+                                'line': {'color': "white", 'width': 4},
+                                'thickness': 0.75,
+                                'value': 50
+                            }
+                        }
+                    ))
+                    fig_gauge.update_layout(height=280, margin=dict(l=10, r=10, t=50, b=10), paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
+                    st.plotly_chart(fig_gauge, use_container_width=True)
+                    
+                    try:
+                        fig_gauge.write_image("gauge.png")
+                    except Exception as e:
+                        pass
+
                 # -- TABS --
-                tab1, tab2, tab3 = st.tabs(["Check Eligibility", "My History", "Sustainability Projections"])
+                tab1, tab2, tab3, tab4 = st.tabs(["Check Eligibility", "My History", "Sustainability Projections", "Recommendations"])
                 
                 with tab1:
                     col1, col2 = st.columns([1, 1.5])
@@ -284,9 +408,59 @@ if check_btn or st.session_state.get('last_user'):
                             st.markdown(f"⚠️ **Penalty Active:** You have {eval_data['unpaid_months']} unpaid months causing a subtraction of {eval_data['unpaid_months']*5} stability points.")
                         else:
                             st.markdown("✅ **Consistent Payments:** No penalties for unpaid months applied.")
+                            
+                with tab4:
+                    st.markdown("### Top Recommendation Cards")
+                    top_2 = scored_schemes[:2]
+                    
+                    rec_col1, rec_col2 = st.columns(2)
+                    for idx, (col, s) in enumerate(zip([rec_col1, rec_col2], top_2)):
+                        with col:
+                            border_color = "#00d296" if s['Match Score'] > 80 else "#ffcc00"
+                            st.markdown(f'''
+                            <div style="border: 2px solid {border_color}; padding: 20px; border-radius: 12px; margin-bottom: 10px; background-color: #1e1e1e;">
+                                <h4 style="margin-top: 0; color: #fff; font-size: 20px;">{s['Scheme Name']}</h4>
+                                <div style="font-size: 28px; font-weight: bold; color: {border_color};">{s['Match Score']}% Match</div>
+                                <div style="margin-top: 15px; color: #ccc; font-size: 15px;"><b>Coverage Limit:</b> {s['Coverage Limit']}</div>
+                                <div style="margin-top: 8px; color: #999; font-size: 14px;"><b>Annual Premium:</b> {s['Annual Premium']}</div>
+                            </div>
+                            ''', unsafe_allow_html=True)
+                            
+                            with st.popover("⚡ One-Click Apply", use_container_width=True):
+                                provider_name = s['Scheme Name'].split(' ')[0]
+                                st.warning(f"By clicking confirm, you authorize IDCS to share your Stability Index and Profile with {provider_name} for underwriting. Do you agree?")
+                                if st.button("Confirm Application", key=f"apply_{idx}", type="primary"):
+                                    pdf_path = f"passport_{idx}.pdf"
+                                    # Create the profile dictionary properly
+                                    profile_data = user_profile.copy()
+                                    profile_data['name'] = user['name']
+                                    profile_data['stability_score'] = eval_data['stability_score']
+                                    
+                                    generate_stability_passport(profile_data, s, pdf_path, "gauge.png")
+                                    ref_id = submit_to_provider_api(profile_data, pdf_path)
+                                    
+                                    st.success(f"Application submitted! Reference ID: {ref_id}. {provider_name} will contact you within 24 hours.")
+                                    with open(pdf_path, "rb") as pdf_file:
+                                        st.download_button(label="📄 Download Financial Passport", data=pdf_file, file_name=f"{provider_name}_passport.pdf", mime="application/pdf", key=f"dl_{idx}")
+                            
+                    def display_comparison_matrix(schemes):
+                        df = pd.DataFrame(schemes)
+                        
+                        def highlight_max(s):
+                            is_max = s == s.max()
+                            return ['background-color: lightblue; color: black;' if v else '' for v in is_max]
+                        
+                        styled_df = df.style.apply(highlight_max, subset=['Match Score']).format({"Match Score": "{:.0f}"})
+                        st.dataframe(styled_df, hide_index=True, use_container_width=True)
+
+                    st.markdown("### Insurance Comparison Matrix")
+                    display_comparison_matrix(scored_schemes)
             else:
                 st.error(f"Evaluating failed (Status {response.status_code}): {response.text}")
         except requests.exceptions.ConnectionError:
             st.error("Failed to connect to the backend API. Please make sure the FastAPI server is running.")
 else:
-    st.info("👈 Enter a User ID in the sidebar and evaluate to load data.")
+    st.info("👈 Enter your Full Name in the sidebar and evaluate to load data.")
+
+st.markdown("---")
+st.markdown("<div style='text-align: center; color: #666; font-size: 12px;'>IDCS is an AI brokerage tool. Data processing complies with the Kenya Data Protection Act.</div>", unsafe_allow_html=True)
