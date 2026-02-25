@@ -5,6 +5,8 @@ import plotly.graph_objects as go
 from data_handler import process_financial_data
 import os
 from pdf_generator import generate_stability_passport, submit_to_provider_api
+import time
+from datetime import datetime
 
 st.set_page_config(page_title="IDCS Dashboard", page_icon="🏦", layout="wide")
 
@@ -14,6 +16,57 @@ try:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 except FileNotFoundError:
     pass
+
+st.markdown("""
+<style>
+.sync-card {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 10px;
+}
+.sync-btn-container {
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    border-radius: 10px;
+    padding: 2px;
+    margin-top: 10px;
+}
+.sync-indicator {
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0% { transform: scale(0.95); opacity: 0.5; }
+    50% { transform: scale(1.05); opacity: 1; }
+    100% { transform: scale(0.95); opacity: 0.5; }
+}
+.vertical-progress-line {
+    width: 2px;
+    height: 30px;
+    background: #00d296;
+    box-shadow: 0 0 10px #00d296;
+    margin-left: 12px;
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+div[data-testid="stStatusWidget"] {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+.icon-amber {
+    color: #ffbf00;
+    text-shadow: 0 0 10px #ffbf00;
+    font-size: 20px;
+}
+.icon-emerald {
+    color: #00d296;
+    text-shadow: 0 0 10px #00d296;
+    font-size: 20px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # Helper to render custom cards
 def metric_card(title, value, color_class=""):
@@ -128,41 +181,159 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Profile Sync")
     
-    if st.button("Check / Initialize DB Profile", width=True):
+    with st.container():
+        st.markdown('<div class="sync-btn-container" style="text-align: center;">', unsafe_allow_html=True)
+        sync_button = st.button("🔄 Refresh Data", type="secondary")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+    if sync_button:
         if st.session_state.full_name:
-            try:
-                user_res = requests.post("http://127.0.0.1:8000/user", json={
-                    "name": st.session_state.full_name,
-                    "age": st.session_state.age,
-                    "employment_type": st.session_state.employment_status
-                })
-                if user_res.status_code == 200:
-                    udata = user_res.json()
-                    st.session_state.current_user_id = udata["user_id"]
-                    if udata["is_new"]:
-                        st.success("New profile initialized! Please upload CSVs.")
-                        st.session_state["financial_data"] = None
-                    else:
-                        st.success("Profile loaded from DB!")
-                        if udata["history"]:
+            with st.status("Syncing Profile...", expanded=True) as status:
+                st.markdown('<div class="sync-card">', unsafe_allow_html=True)
+                
+                # Step 1: DB Check
+                step1_col1, step1_col2 = st.columns([1, 5])
+                with step1_col1:
+                    icon1 = st.empty()
+                    icon1.markdown("<div class='sync-indicator icon-amber'>⏳</div>", unsafe_allow_html=True)
+                with step1_col2:
+                    text1 = st.empty()
+                    text1.markdown("<div style='margin-top: 4px; font-weight: 500;'>Connecting to DB...</div>", unsafe_allow_html=True)
+                
+                time.sleep(1) # Visual delay for effect
+                icon1.markdown("<div class='icon-emerald'>✅</div>", unsafe_allow_html=True)
+                text1.markdown("<div style='margin-top: 4px; color: #aaa;'>DB Connection Verified</div>", unsafe_allow_html=True)
+                
+                # Progress line
+                st.markdown("<div class='vertical-progress-line'></div>", unsafe_allow_html=True)
+                
+                # Step 2: Profile Load
+                step2_col1, step2_col2 = st.columns([1, 5])
+                with step2_col1:
+                    icon2 = st.empty()
+                    icon2.markdown("<div class='sync-indicator icon-amber'>⏳</div>", unsafe_allow_html=True)
+                with step2_col2:
+                    text2 = st.empty()
+                    text2.markdown("<div style='margin-top: 4px; font-weight: 500;'>Loading Cloud Profile...</div>", unsafe_allow_html=True)
+                
+                try:
+                    user_res = requests.post("http://127.0.0.1:8000/user", json={
+                        "name": st.session_state.full_name,
+                        "age": st.session_state.age,
+                        "employment_type": st.session_state.employment_status
+                    })
+                    if user_res.status_code == 200:
+                        udata = user_res.json()
+                        st.session_state.current_user_id = udata["user_id"]
+                        
+                        time.sleep(0.5)
+                        icon2.markdown("<div class='icon-emerald'>✅</div>", unsafe_allow_html=True)
+                        if udata["is_new"]:
+                            text2.markdown("<div style='margin-top: 4px; color: #aaa;'>New Profile Configured</div>", unsafe_allow_html=True)
+                            st.session_state["financial_data"] = None
+                        else:
+                            text2.markdown("<div style='margin-top: 4px; color: #aaa;'>Profile Loaded</div>", unsafe_allow_html=True)
+                            
+                        # Progress line
+                        st.markdown("<div class='vertical-progress-line'></div>", unsafe_allow_html=True)
+                            
+                        # Step 3: Data Refresh
+                        step3_col1, step3_col2 = st.columns([1, 5])
+                        with step3_col1:
+                            icon3 = st.empty()
+                            icon3.markdown("<div class='sync-indicator icon-amber'>⏳</div>", unsafe_allow_html=True)
+                        with step3_col2:
+                            text3 = st.empty()
+                            text3.markdown("<div style='margin-top: 4px; font-weight: 500;'>Refreshing Datasets...</div>", unsafe_allow_html=True)
+                            
+                        time.sleep(0.8)
+                        if not udata["is_new"] and udata["history"]:
                             df_hist = pd.DataFrame(udata["history"])
                             df_hist['Month'] = df_hist['month']
                             df_hist['Total Income'] = df_hist['amount']
                             st.session_state["financial_data"] = df_hist
-            except Exception as e:
-                st.error("Could not connect to backend.")
+                            text3.markdown("<div style='margin-top: 4px; color: #aaa;'>Historical Data Restored</div>", unsafe_allow_html=True)
+                        else:
+                            text3.markdown("<div style='margin-top: 4px; color: #aaa;'>Data Refresh Complete</div>", unsafe_allow_html=True)
+                        
+                        icon3.markdown("<div class='icon-emerald'>✅</div>", unsafe_allow_html=True)
+                        st.markdown('</div>', unsafe_allow_html=True) # close sync-card
+                        
+                        st.session_state.last_sync_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        status.update(label="Sync Completed!", state="complete", expanded=False)
+                        st.success("Successfully synced all profile assets.")
+                    else:
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        status.update(label="Sync Failed!", state="error", expanded=False)
+                        st.error("Invalid response from server.")
+                except Exception as e:
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    status.update(label="Sync Error", state="error", expanded=False)
+                    st.error("Could not connect to backend API.")
         else:
-            st.error("Please enter a Full Name.")
+            st.error("Please enter a Full Name to sync.")
+            
+    if st.session_state.get('last_sync_time'):
+        st.markdown(f"<div style='text-align: center; font-style: italic; font-size: 11px; margin-top: 20px; color: #adb5bd;'>Last Synced: {st.session_state.last_sync_time}</div>", unsafe_allow_html=True)
             
     st.markdown("---")
     st.markdown("### Claim Evaluation")
     current_income = st.number_input("Current Month Income (KES)", min_value=0.0, step=1000.0, value=40000.0)
     
+    # Dynamic Plotly Gauge Calculation
+    import numpy as np
+    if "financial_data" in st.session_state and st.session_state["financial_data"] is not None:
+        df_fin = st.session_state["financial_data"]
+        incomes = df_fin['Total Income'].tolist()
+        incomes.append(current_income)
+        live_mu = np.mean(incomes)
+        live_sigma = np.std(incomes, ddof=0)
+        unpaid_months = sum(df_fin.get('status', pd.Series(["Paid"]*len(df_fin))) == "Unpaid")
+        w_emp = 1.1 if st.session_state.get('employment_status') in ["Public Full-Time", "Private Contract"] else 1.0
+        
+        if live_mu > 0:
+            s_base = 100 * (1 - (live_sigma / live_mu)) * w_emp
+            st.session_state.stability_score = max(0, min(100, s_base - (5 * unpaid_months)))
+        else:
+            st.session_state.stability_score = 0.0
+    else:
+        st.session_state.stability_score = 0.0
+        
+    fig_gauge = go.Figure(go.Indicator(
+        mode = "gauge+number+delta",
+        value = st.session_state.stability_score,
+        title = {'text': "Income Stability Index", 'font': {'color': 'white'}},
+        delta = {'reference': 50, 'increasing': {'color': "green"}, 'decreasing': {'color': "red"}},
+        gauge = {
+            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "white"},
+            'bar': {'color': "black"},
+            'bgcolor': "transparent",
+            'borderwidth': 0,
+            'steps': [
+                {'range': [0, 40], 'color': "red"},
+                {'range': [40, 75], 'color': "orange"},
+                {'range': [75, 100], 'color': "green"}
+            ],
+            'threshold': {
+                'line': {'color': "red", 'width': 4},
+                'thickness': 0.75,
+                'value': 40
+            }
+        }
+    ))
+    fig_gauge.update_layout(height=250, margin=dict(l=10, r=10, t=50, b=10), paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
+    st.plotly_chart(fig_gauge, use_container_width=True)
+    
+    try:
+        fig_gauge.write_image("gauge.png")
+    except Exception:
+        pass
+    
     st.markdown("<br>", unsafe_allow_html=True)
-    check_btn = st.button("Evaluate Claim")
+    check_btn = st.button("Evaluate Claim", type="primary", use_container_width=True)
     st.markdown("<br>", unsafe_allow_html=True)
     
-    st.button("Simulate Economic Shock (-30%)", on_click=toggle_shock)
+    st.button("Simulate Economic Shock (-30%)", on_click=toggle_shock, use_container_width=True)
 
 # -- MAIN DASHBOARD --
 st.markdown("""
@@ -304,40 +475,6 @@ if check_btn or st.session_state.get('last_user'):
                 
                 if st.session_state.simulate_shock:
                     st.warning(f"⚠️ Simulated Mode Active! Evaluating with artificial 30% drop (Income = KES {income_to_evaluate:,.2f})")
-
-                # The Stability Gauge Chart
-                col_g1, col_g2, col_g3 = st.columns([1, 2, 1])
-                with col_g2:
-                    fig_gauge = go.Figure(go.Indicator(
-                        mode = "gauge+number",
-                        value = eval_data['stability_score'],
-                        title = {'text': "Income Stability Index", 'font': {'color': 'white'}},
-                        domain = {'x': [0, 1], 'y': [0, 1]},
-                        gauge = {
-                            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "white"},
-                            'bar': {'color': "rgba(255,255,255,0.3)"},
-                            'bgcolor': "rgba(0,0,0,0)",
-                            'borderwidth': 2,
-                            'bordercolor': "gray",
-                            'steps': [
-                                {'range': [0, 40], 'color': "red"},
-                                {'range': [40, 75], 'color': "orange"},
-                                {'range': [75, 100], 'color': "green"}
-                            ],
-                            'threshold': {
-                                'line': {'color': "white", 'width': 4},
-                                'thickness': 0.75,
-                                'value': 50
-                            }
-                        }
-                    ))
-                    fig_gauge.update_layout(height=280, margin=dict(l=10, r=10, t=50, b=10), paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
-                    st.plotly_chart(fig_gauge, use_container_width=True)
-                    
-                    try:
-                        fig_gauge.write_image("gauge.png")
-                    except Exception as e:
-                        pass
 
                 # -- TABS --
                 tab1, tab2, tab3, tab4 = st.tabs(["Check Eligibility", "My History", "Sustainability Projections", "Recommendations"])
