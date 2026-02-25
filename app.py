@@ -296,32 +296,45 @@ with st.sidebar:
             st.session_state.stability_score = max(0, min(100, s_base - (5 * unpaid_months)))
         else:
             st.session_state.stability_score = 0.0
+            live_mu = 0
     else:
         st.session_state.stability_score = 0.0
+        live_mu = 0
+        
+    gauge_config = {
+        'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "white"},
+        'bar': {'color': "#00FFAA"},
+        'bgcolor': "rgba(0,0,0,0)",
+        'borderwidth': 0,
+        'steps': [
+            {'range': [0, 40], 'color': "rgba(255, 75, 75, 0.4)"},
+            {'range': [40, 75], 'color': "rgba(255, 165, 0, 0.4)"},
+            {'range': [75, 100], 'color': "rgba(0, 200, 83, 0.4)"}
+        ]
+    }
+    
+    if live_mu > 0 and current_income < (0.8 * live_mu):
+        gauge_config['threshold'] = {
+            'line': {'color': "red", 'width': 4},
+            'thickness': 0.75,
+            'value': 80
+        }
         
     fig_gauge = go.Figure(go.Indicator(
         mode = "gauge+number+delta",
         value = st.session_state.stability_score,
         title = {'text': "Income Stability Index", 'font': {'color': 'white'}},
         delta = {'reference': 50, 'increasing': {'color': "green"}, 'decreasing': {'color': "red"}},
-        gauge = {
-            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "white"},
-            'bar': {'color': "black"},
-            'bgcolor': "transparent",
-            'borderwidth': 0,
-            'steps': [
-                {'range': [0, 40], 'color': "red"},
-                {'range': [40, 75], 'color': "orange"},
-                {'range': [75, 100], 'color': "green"}
-            ],
-            'threshold': {
-                'line': {'color': "red", 'width': 4},
-                'thickness': 0.75,
-                'value': 40
-            }
-        }
+        gauge = gauge_config
     ))
-    fig_gauge.update_layout(height=250, margin=dict(l=10, r=10, t=50, b=10), paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
+    
+    fig_gauge.update_layout(
+        height=250,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font={'color': "white", 'family': "sans-serif"},
+        margin=dict(l=20, r=20, t=50, b=20)
+    )
     st.plotly_chart(fig_gauge, use_container_width=True)
     
     try:
