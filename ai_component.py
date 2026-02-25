@@ -119,9 +119,14 @@ def inject_ai_assistant():
                             
                             // Extract context injected by python server
                             const ctxEl = window.document.getElementById("idcs-ai-context");
-                            const activeContext = ctxEl ? ctxEl.textContent : "No active claim data on screen.";
+                            let activeContext = ctxEl ? ctxEl.textContent : "No active claim data on screen.";
                             
-                            const systemPrompt = "You are the IDCS Assistant. You only answer questions about this Income Dip Compensation System. You do not have access to the internet. Use the provided website context to help users understand their stability scores and eligibility.\\nWebsite Context:\\n" + activeContext;
+                            const finCtxEl = window.document.getElementById("financial-verification-context");
+                            if (finCtxEl) {
+                                activeContext += "\\nCalibration Summary Data: " + finCtxEl.textContent;
+                            }
+                            
+                            const systemPrompt = "You are the IDCS Assistant. You only answer questions about this Income Dip Compensation System. You do not have access to the internet. Use the provided website context to help users understand their stability scores, eligibility, and financial data verification.\\nWebsite Context:\\n" + activeContext;
 
                             try {
                                 const response = await engine.chat.completions.create({

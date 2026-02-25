@@ -136,6 +136,54 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# -- FINANCIAL DATA VERIFICATION SECTION --
+st.markdown("<h2 style='color: #fff; margin-bottom: 20px;'>Financial Data Verification</h2>", unsafe_allow_html=True)
+
+from data_handler import process_financial_data
+
+col1, col2 = st.columns(2)
+with col1:
+    mpesa_upload = st.file_uploader("Upload M-Pesa Statement (CSV)", type=["csv"], key="mpesa")
+with col2:
+    bank_upload = st.file_uploader("Upload Bank Statement (CSV)", type=["csv"], key="bank")
+
+if st.button("Process Data", type="primary"):
+    st.session_state["financial_data"] = process_financial_data(mpesa_upload, bank_upload)
+
+if "financial_data" in st.session_state and st.session_state["financial_data"] is not None:
+    df_fin = st.session_state["financial_data"]
+    
+    with st.expander("Advanced Calibration Settings", expanded=True):
+        stability_sensitivity = st.slider("Stability Sensitivity", min_value=0.1, max_value=1.0, value=0.8, step=0.05)
+    
+    # Calculate Moving Average (mu) of the first 5 months
+    first_5 = df_fin.head(5)
+    mu = first_5['Total Income'].mean()
+    
+    # Set the 6th month as 'Current Month'
+    current_month_income = df_fin.iloc[5]['Total Income'] if len(df_fin) >= 6 else df_fin.iloc[-1]['Total Income']
+    
+    # Variance from Average
+    df_fin['Variance from Average'] = df_fin['Total Income'] - mu
+    
+    dip_predicted = current_month_income < (stability_sensitivity * mu)
+    
+    if dip_predicted:
+        st.error(f"🚨 **Dip Predicted!** Current Month Income (KES {current_month_income:,.2f}) is below the {stability_sensitivity*100:.0f}% threshold of the 5-month moving average (KES {mu:,.2f}).")
+    else:
+        st.success(f"✅ **Stable Income!** Current Month Income (KES {current_month_income:,.2f}) is above the {stability_sensitivity*100:.0f}% threshold of the 5-month moving average (KES {mu:,.2f}).")
+        
+    st.markdown("### Calibration Summary")
+    st.dataframe(df_fin[['Month', 'Total Income', 'Variance from Average']], use_container_width=True)
+    
+    # Generate context for AI Assistant
+    variance_str = ", ".join([f"M{row['Month']} (Var: {row['Variance from Average']:,.0f})" for _, row in df_fin.iterrows()])
+    fin_ai_ctx = f"Financial Review: 5-mo Average is KES {mu:,.2f}. Month 6 Income is KES {current_month_income:,.2f}. Sensitivity Check Triggered Dip: {dip_predicted}. Monthly variances from average computed from CSV data: {variance_str}."
+    if dip_predicted:
+        fin_ai_ctx += " Note: For low scores or drops, tell the user specific details e.g., 'Your income dropped in month 6 due to lower overall transactions/funds received compared to the 5-month average of KES " + f"{mu:,.2f}'."
+    st.markdown(f"<div id='financial-verification-context' style='display:none;'>{fin_ai_ctx}</div>", unsafe_allow_html=True)
+    st.markdown("---")
+
 if check_btn or st.session_state.get('last_user'):
     st.session_state.last_user = user_id
     
