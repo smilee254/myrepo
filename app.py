@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.graph_objects as go
+from data_handler import process_financial_data
 
 st.set_page_config(page_title="IDCS Dashboard", page_icon="🏦", layout="wide")
 
@@ -55,7 +56,7 @@ if not st.session_state.authenticated:
         
         with login_col1:
             try:
-                st.image("financial_stability.png", use_container_width=True)
+                st.image("financial_stability.png", width='stretch')
             except Exception:
                 # Fallback if image not copied correctly
                 st.markdown("<div style='height:300px;background:#2a2a2a;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#666;'>[Hero Image Location]</div>", unsafe_allow_html=True)
@@ -68,7 +69,7 @@ if not st.session_state.authenticated:
             if st.session_state.auth_step == 1:
                 email = st.text_input("Work Email", placeholder="name@company.co.ke", key="email_input")
                 
-                if st.button("Continue", type="primary", use_container_width=True):
+                if st.button("Continue", type="primary", width='stretch'):
                     if "@" in email and "." in email:
                         st.session_state.auth_email = email
                         st.session_state.auth_step = 2
@@ -79,7 +80,7 @@ if not st.session_state.authenticated:
             elif st.session_state.auth_step == 2:
                 st.markdown(f"<p style='color: #00d296; margin-bottom: 20px; font-weight: 600;'>{st.session_state.auth_email}</p>", unsafe_allow_html=True)
                 
-                if st.button("🔑 Sign in with Passkey", type="primary", use_container_width=True):
+                if st.button("🔑 Sign in with Passkey", type="primary", width='stretch'):
                     st.session_state.authenticated = True
                     st.rerun()
                     
@@ -90,14 +91,14 @@ if not st.session_state.authenticated:
                 
                 col_a, col_b = st.columns(2)
                 with col_a:
-                    if st.button("Sign In", use_container_width=True):
+                    if st.button("Sign In", width='stretch'):
                         if password:
                             st.session_state.authenticated = True
                             st.rerun()
                         else:
                             st.error("Please enter your OTP or Password.")
                 with col_b:
-                    if st.button("← Back to Email", use_container_width=True):
+                    if st.button("← Back to Email", width='stretch'):
                         st.session_state.auth_step = 1
                         st.rerun()
                     
@@ -139,8 +140,6 @@ st.markdown("""
 # -- FINANCIAL DATA VERIFICATION SECTION --
 st.markdown("<h2 style='color: #fff; margin-bottom: 20px;'>Financial Data Verification</h2>", unsafe_allow_html=True)
 
-from data_handler import process_financial_data
-
 col1, col2 = st.columns(2)
 with col1:
     mpesa_upload = st.file_uploader("Upload M-Pesa Statement (CSV)", type=["csv"], key="mpesa")
@@ -174,7 +173,7 @@ if "financial_data" in st.session_state and st.session_state["financial_data"] i
         st.success(f"✅ **Stable Income!** Current Month Income (KES {current_month_income:,.2f}) is above the {stability_sensitivity*100:.0f}% threshold of the 5-month moving average (KES {mu:,.2f}).")
         
     st.markdown("### Calibration Summary")
-    st.dataframe(df_fin[['Month', 'Total Income', 'Variance from Average']], use_container_width=True)
+    st.dataframe(df_fin[['Month', 'Total Income', 'Variance from Average']], width='stretch')
     
     # Generate context for AI Assistant
     variance_str = ", ".join([f"M{row['Month']} (Var: {row['Variance from Average']:,.0f})" for _, row in df_fin.iterrows()])
@@ -268,7 +267,7 @@ if check_btn or st.session_state.get('last_user'):
                             margin=dict(l=20, r=20, t=30, b=20),
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                         )
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width='stretch')
                     else:
                         st.info("No income history available.")
 
