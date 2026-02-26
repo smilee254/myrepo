@@ -7,10 +7,23 @@ import os
 from pdf_generator import generate_stability_passport, submit_to_provider_api
 import time
 from datetime import datetime
+from engine import IDCS_Engine, calculate_custom_premium
+
 
 st.set_page_config(page_title="IDCS Dashboard", page_icon="🏦", layout="wide")
 
+# -- SESSION STATE INIT --
+if "live_mu" not in st.session_state:
+    st.session_state.live_mu = 0
+if "live_sigma" not in st.session_state:
+    st.session_state.live_sigma = 0
+if "stability_score" not in st.session_state:
+    st.session_state.stability_score = 0
+if "simulate_shock" not in st.session_state:
+    st.session_state.simulate_shock = False
+
 # Inject Custom CSS
+
 try:
     with open("style.css") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
@@ -65,6 +78,63 @@ div[data-testid="stStatusWidget"] {
     text-shadow: 0 0 10px #00d296;
     font-size: 20px;
 }
+.premium-glow {
+    font-size: 36px;
+    font-weight: 800;
+    color: #ffffff;
+    text-shadow: 0 0 10px #00d296, 0 0 20px #00d296;
+    background: rgba(0, 210, 150, 0.1);
+    padding: 20px;
+    border-radius: 15px;
+    border: 1px solid #00d296;
+    text-align: center;
+    margin: 20px 0;
+}
+.roadmap-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 30px 0;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+}
+.roadmap-step {
+    text-align: center;
+    flex: 1;
+    position: relative;
+}
+.roadmap-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 25%;
+    right: -50%;
+    width: 100%;
+    height: 2px;
+    background: #333;
+    z-index: 0;
+}
+.roadmap-icon {
+    width: 40px;
+    height: 40px;
+    background: #2a2a2a;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 10px;
+    border: 2px solid #555;
+    position: relative;
+    z-index: 1;
+}
+.roadmap-active .roadmap-icon {
+    border-color: #00d296;
+    color: #00d296;
+}
+.roadmap-label {
+    font-size: 12px;
+    color: #aaa;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -86,9 +156,27 @@ def status_card(title, message, is_success=True):
     </div>
     """, unsafe_allow_html=True)
 
-# State variable for Simulation
-if "simulate_shock" not in st.session_state:
-    st.session_state.simulate_shock = False
+def render_claims_roadmap(deferred_days, stage=1):
+    steps = [
+        {"label": "Day 1: Dip Detected", "icon": "🚨"},
+        {"label": f"Day 1-{deferred_days}: Waiting", "icon": "⏳"},
+        {"label": f"Day {deferred_days+1}: Payout", "icon": "💰"}
+    ]
+    
+    html = '<div class="roadmap-container">'
+    for i, step in enumerate(steps):
+        active_class = "roadmap-active" if stage > i else ""
+        html += f'''
+        <div class="roadmap-step {active_class}">
+            <div class="roadmap-icon">{step['icon']}</div>
+            <div class="roadmap-label">{step['label']}</div>
+        </div>
+        '''
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+
+# Helper to render custom cards
 
 def toggle_shock():
     st.session_state.simulate_shock = not st.session_state.simulate_shock
@@ -177,6 +265,66 @@ with st.sidebar:
     st.session_state.age = st.slider("Age", 18, 65, value=st.session_state.get("age", 30))
     st.session_state.employment_status = st.selectbox("Employment Status", ["Public Full-Time", "Private Contract", "Self-Employed/Jua Kali", "Unemployed"], index=0)
     st.session_state.dependants = st.number_input("Dependants", min_value=0, step=1, value=st.session_state.get("dependants", 0))
+
+    st.markdown("---")
+    st.markdown("### Current Month Data")
+    current_income = st.number_input("Current Month Income (KES)", min_value=0.0, step=1000.0, value=40000.0)
+
+    # Initial Metric calculation for UI caps
+    import numpy as np
+    if "financial_data" in st.session_state and st.session_state["financial_data"] is not None:
+        df_fin = st.session_state["financial_data"]
+        incomes = df_fin['Total Income'].tolist()
+        incomes.append(current_income)
+        st.session_state.live_mu = float(np.mean(incomes))
+        st.session_state.live_sigma = float(np.std(incomes, ddof=0))
+    
+    # Local assignment for safe usage
+    live_mu = st.session_state.live_mu
+    live_sigma = st.session_state.live_sigma
+
+    st.markdown("---")
+    st.markdown("### Premium & Underwriting")
+    
+    st.session_state.deferred_period = st.select_slider(
+        "Deferred Period",
+        options=[30, 60, 90],
+        value=st.session_state.get("deferred_period", 30),
+        help="Longer periods reduce your monthly premium."
+    )
+    st.caption(f"Waiting Period: {st.session_state.deferred_period} Days")
+
+    # Benefit target capped at 75% of mean
+    mu_val = st.session_state.live_mu
+    max_benefit = mu_val * 0.75
+    st.session_state.benefit_target = st.number_input(
+        "Monthly Benefit Target (KES)",
+        min_value=0.0,
+        max_value=float(max_benefit),
+        value=st.session_state.get("benefit_target", min(30000.0, max_benefit)),
+        step=1000.0
+    )
+
+    st.info(f"Capped at 75% of mean: KES {max_benefit:,.0f}")
+
+    # Calculate Custom Premium
+    if mu_val > 0:
+        volatility = st.session_state.get('live_sigma', 0.0)
+        st.session_state.custom_premium = calculate_custom_premium(
+            mean=mu_val,
+            volatility=volatility,
+            age=st.session_state.age,
+            deferred_days=st.session_state.deferred_period,
+            coverage_target=st.session_state.benefit_target
+        )
+        st.markdown(f"""
+        <div class="premium-glow">
+            <div style="font-size: 14px; color: #00d296; text-transform: uppercase; letter-spacing: 1px;">Monthly Premium</div>
+            Ksh {st.session_state.custom_premium:,.2f}
+        </div>
+        """, unsafe_allow_html=True)
+
+
 
     st.markdown("---")
     st.markdown("### Profile Sync")
@@ -278,16 +426,13 @@ with st.sidebar:
             
     st.markdown("---")
     st.markdown("### Claim Evaluation")
-    current_income = st.number_input("Current Month Income (KES)", min_value=0.0, step=1000.0, value=40000.0)
     
     # Dynamic Plotly Gauge Calculation
-    import numpy as np
+    live_mu = st.session_state.live_mu
+    live_sigma = st.session_state.live_sigma
+    
     if "financial_data" in st.session_state and st.session_state["financial_data"] is not None:
         df_fin = st.session_state["financial_data"]
-        incomes = df_fin['Total Income'].tolist()
-        incomes.append(current_income)
-        live_mu = np.mean(incomes)
-        live_sigma = np.std(incomes, ddof=0)
         unpaid_months = sum(df_fin.get('status', pd.Series(["Paid"]*len(df_fin))) == "Unpaid")
         w_emp = 1.1 if st.session_state.get('employment_status') in ["Public Full-Time", "Private Contract"] else 1.0
         
@@ -296,10 +441,9 @@ with st.sidebar:
             st.session_state.stability_score = max(0, min(100, s_base - (5 * unpaid_months)))
         else:
             st.session_state.stability_score = 0.0
-            live_mu = 0
     else:
         st.session_state.stability_score = 0.0
-        live_mu = 0
+
         
     gauge_config = {
         'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "white"},
@@ -366,16 +510,24 @@ with col2:
     bank_upload = st.file_uploader("Upload Bank Statement (CSV or PDF)", type=["csv", "pdf"], key="bank")
 
 if st.button("Process Data", type="primary"):
-    st.session_state["financial_data"] = process_financial_data(mpesa_upload, bank_upload)
+    df_processed = process_financial_data(mpesa_upload, bank_upload)
+    st.session_state["financial_data"] = df_processed
+    if not df_processed.empty:
+        st.session_state.live_mu = float(df_processed['Total Income'].mean())
+        st.session_state.live_sigma = float(df_processed.get('Total Income', pd.Series([0])).std())
+    else:
+        st.session_state.live_mu = 0
+        st.session_state.live_sigma = 0
 
-if "financial_data" in st.session_state and st.session_state["financial_data"] is not None:
+# Use session state to avoid NameError
+live_mu = st.session_state.get('live_mu', 0)
+
+if "financial_data" in st.session_state and st.session_state["financial_data"] is not None and live_mu > 0:
     df_fin = st.session_state["financial_data"]
+    mu = live_mu # Link to unified baseline
     
     with st.expander("Advanced Calibration Settings", expanded=True):
         stability_sensitivity = st.slider("Stability Sensitivity", min_value=0.1, max_value=1.0, value=0.8, step=0.05)
-    
-    # Calculate Historical Baseline (mu) of all 6 months
-    mu = df_fin['Total Income'].mean()
     
     # Use manual input for the current month dip check
     current_month_income = current_income
@@ -410,6 +562,10 @@ if "financial_data" in st.session_state and st.session_state["financial_data"] i
         fin_ai_ctx += " Note: For low scores or drops, emphasize: 'Based on the KES " + f"{current_month_income:,.0f} you entered, you have a {pct_diff:.1f}% dip compared to your 6-month average of KES {mu:,.2f}.'"
     st.markdown(f"<div id='financial-verification-context' style='display:none;'>{fin_ai_ctx}</div>", unsafe_allow_html=True)
     st.markdown("---")
+else:
+    st.info("Please upload your M-Pesa/Bank statement to calculate your historical baseline.")
+    st.markdown("---")
+
 
 if check_btn or st.session_state.get('last_user'):
     st.session_state.last_user = st.session_state.get('full_name')
@@ -443,7 +599,9 @@ if check_btn or st.session_state.get('last_user'):
                     "age": st.session_state.age,
                     "employment_type": st.session_state.employment_status,
                     "current_income": income_to_evaluate,
-                    "income_history": hist_payload
+                    "income_history": hist_payload,
+                    "premium": float(st.session_state.get('custom_premium', 0)),
+                    "deferred_period": int(st.session_state.get('deferred_period', 30))
                 }
             )
             
@@ -509,14 +667,29 @@ if check_btn or st.session_state.get('last_user'):
                             if eval_data['eligible']:
                                 msg = f"Based on your stability profile ({score:.1f}), your claim is approved.<br><br><span style='font-size: 32px; font-weight: 700; color: #00d296;'>Payout: KES {eval_data['payout']:,.2f}</span>"
                                 status_card("✅ Alert: Income Dip Compensated", msg, is_success=True)
+                                
+                                st.markdown("### Underwriting & Timeline")
+                                st.info(f"**Dip Trigger Active:** Current Month (KES {income_to_evaluate:,.0f}) is < 80% of Mean (KES {eval_data['mu']*0.8:,.0f})")
+                                st.success(f"**Claim Eligibility:** VERIFIED (Deferred Period of {st.session_state.deferred_period} Days acknowledged)")
+                                render_claims_roadmap(st.session_state.deferred_period, stage=3)
                             else:
                                 reason = []
                                 if score < 50: reason.append("Stability Score is below 50.")
                                 if eval_data['paid_months'] < 3: reason.append("Less than 3 paid months recorded.")
                                 msg = "Dip detected, but you do not meet the minimum safety criteria:<br>- " + "<br>- ".join(reason)
                                 status_card("❌ Alert: Eligibility Failed", msg, is_success=False)
+                                
+                                st.markdown("### Underwriting & Timeline")
+                                st.info(f"**Dip Trigger Active:** Current Month < 80% Mean")
+                                st.warning("**Claim Eligibility:** PENDING (Criteria not met)")
+                                render_claims_roadmap(st.session_state.deferred_period, stage=1)
                         else:
                             status_card("📈 Status: Stable", f"No significant dip detected. Your income (KES {income_to_evaluate:,.2f}) is above the 80% stability threshold (KES {eval_data['mu']*0.8:,.2f}).", is_success=True)
+                            
+                            st.markdown("### Underwriting & Timeline")
+                            st.markdown(f"**Dip Trigger:** inactive (Current Month > 80% Mean)")
+                            render_claims_roadmap(st.session_state.deferred_period, stage=0)
+
 
                 with tab2:
                     st.markdown("### 6-Month Volatility Chart")

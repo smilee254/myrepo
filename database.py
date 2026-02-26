@@ -12,6 +12,8 @@ class User(Base):
     employment_type = Column(String)
     src_tax_bracket = Column(String)
     src_cap = Column(Float)
+    premium = Column(Float, default=0.0)
+    deferred_period = Column(Integer, default=30)
     incomes = relationship("IncomeHistory", back_populates="user")
 
 class IncomeHistory(Base):

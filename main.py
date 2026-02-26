@@ -41,6 +41,8 @@ class EvaluationRequest(BaseModel):
     employment_type: str
     current_income: float
     income_history: list[IncomeData]
+    premium: float = 0.0
+    deferred_period: int = 30
 
 class ChatRequest(BaseModel):
     system_prompt: str
@@ -108,6 +110,13 @@ def evaluate_claim(req: EvaluationRequest, db: Session = Depends(get_db)):
                 )
                 db.add(db_inc)
             db.commit()
+
+    # Update existing user profile with calculated premium and deferred period
+    user.premium = req.premium
+    user.deferred_period = req.deferred_period
+    db.commit()
+    db.refresh(user)
+
 
     # Use exact history provided in st.session_state (CSV)
     income_history_data = [

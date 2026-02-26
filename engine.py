@@ -53,6 +53,39 @@ class IDCS_Engine:
             "unpaid_months": unpaid_months
         }
 
+def calculate_custom_premium(mean, volatility, age, deferred_days, coverage_target=None):
+    """
+    Calculate custom premium based on user metrics and deferred period.
+    """
+    if coverage_target is None:
+        coverage_target = mean * 0.75  # Default to 75% of mean if not provided
+        
+    # Base Rate: 2.0 per Ksh 1,000
+    base_rate = 2.0
+    
+    # Volatility Loading: (Volatility / Mean)
+    vol_loading = (volatility / mean) if mean > 0 else 0
+    rate = base_rate * (1 + vol_loading)
+    
+    # Age Loading: 1% for every year over 35
+    if age > 35:
+        age_loading = (age - 35) * 0.01
+        rate = rate * (1 + age_loading)
+    
+    # Deferred Discount
+    discount = 0.0
+    if deferred_days == 60:
+        discount = 0.15
+    elif deferred_days == 90:
+        discount = 0.30
+    
+    rate = rate * (1 - discount)
+    
+    # Monthly Premium calculation
+    monthly_premium = (coverage_target / 1000) * rate
+    return round(monthly_premium, 2)
+
+
 INSURANCE_SCHEMES = {
     "Britam Family Income Protection": {
         "description": "Monthly payout for 3-10 years, 10% annual inflation adjustment. Premium ~3,000 KES/mo.",
