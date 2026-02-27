@@ -524,6 +524,10 @@ live_mu = st.session_state.get('live_mu', 0)
 
 if "financial_data" in st.session_state and st.session_state["financial_data"] is not None and live_mu > 0:
     df_fin = st.session_state["financial_data"]
+    
+    with st.expander("Show Filtered Income Transactions"):
+        st.dataframe(df_fin.head())
+        
     mu = live_mu # Link to unified baseline
     
     with st.expander("Advanced Calibration Settings", expanded=True):
