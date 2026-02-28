@@ -15,8 +15,52 @@ class IDCS_Engine:
         # 1. Mean Income (mu)
         mu = np.mean(amounts) if len(amounts) > 0 else 0
 
-        # 2. Standard Deviation (sigma) - population standard deviation
+        # 2. Standard Deviation (sigma)
         sigma = np.std(amounts, ddof=0) if len(amounts) > 0 else 0
+
+        # Pattern Analysis (The Dip Predictor)
+        total_months = len(amounts)
+        dip_threshold = 0.8 * mu
+        dips = [i for i, amt in enumerate(amounts) if amt < dip_threshold]
+        dip_count = len(dips)
+        
+        # Risk & Probability Assessment
+        dip_probability = (dip_count / total_months * 100) if total_months > 0 else 0
+        
+        pattern_detected = False
+        predicted_dip_month = None
+        risk_level = "LOW"
+        next_dip_idx = None
+        
+        if dip_count > 1:
+            intervals = [dips[j] - dips[j-1] for j in range(1, dip_count)]
+            if len(set(intervals)) == 1:
+                pattern_interval = intervals[0]
+                pattern_detected = True
+                last_dip_idx = dips[-1]
+                next_dip_idx = last_dip_idx + pattern_interval
+                
+                months_until_next = next_dip_idx - total_months
+                import datetime
+                import calendar
+                current_month_num = datetime.datetime.now().month
+                future_month_num = (current_month_num + months_until_next - 1) % 12 + 1
+                future_month_name = calendar.month_name[future_month_num]
+                
+                predicted_dip_month = f"{future_month_name} (M-{pattern_interval})"
+                
+                if months_until_next <= 1:
+                    risk_level = "CRITICAL"
+                elif months_until_next <= 2:
+                    risk_level = "HIGH"
+                else:
+                    risk_level = "MEDIUM"
+        elif dip_probability >= 50:
+            risk_level = "HIGH"
+        elif dip_probability > 0:
+            risk_level = "MEDIUM"
+
+        current_dip_detected = bool(current_income < dip_threshold)
 
         # 3. Stability Score (S)
         unpaid_months = statuses.count("Unpaid")
@@ -28,62 +72,50 @@ class IDCS_Engine:
         else:
             stability_score = 0
 
-        # 4. Dip Detection
-        dip_detected = bool(current_income < (0.8 * mu))
-
-        # 5. Eligibility
+        # Eligibility
         paid_months = statuses.count("Paid")
-        eligible = bool(dip_detected and paid_months >= 3 and stability_score >= 50)
+        eligible = bool(current_dip_detected and paid_months >= 3 and stability_score >= 50)
 
-        # 6. Payout Amount
+        # Predicted Compensation (Capped at 70% of Mean income)
+        predicted_compensation = 0.0
         if eligible:
-            payout = min(src_cap, 0.5 * (mu - current_income))
-            payout = max(0, payout) # ensure no negative payout
-        else:
-            payout = 0.0
+            payout = min(src_cap, 0.70 * mu)
+            predicted_compensation = max(0, payout)
 
         return {
             "mu": float(mu),
             "sigma": float(sigma),
             "stability_score": float(stability_score),
-            "dip_detected": dip_detected,
+            "dip_detected": current_dip_detected,
             "eligible": eligible,
-            "payout": float(payout),
+            "payout": float(predicted_compensation),
             "paid_months": paid_months,
-            "unpaid_months": unpaid_months
+            "unpaid_months": unpaid_months,
+            "dip_probability": float(dip_probability),
+            "risk_level": risk_level,
+            "pattern_detected": pattern_detected,
+            "predicted_dip_month": predicted_dip_month,
+            "next_dip_idx": next_dip_idx
         }
 
-def calculate_custom_premium(mean, volatility, age, deferred_days, coverage_target=None):
+def calculate_custom_premium(mean, dip_probability, age, dependencies, employment_status):
     """
-    Calculate custom premium based on user metrics and deferred period.
+    Calculate IDCS custom premium based on deterministic Actuarial Formula.
+    Premium = Base + Dip_Probability_Loading
     """
-    if coverage_target is None:
-        coverage_target = mean * 0.75  # Default to 75% of mean if not provided
-        
-    # Base Rate: 2.0 per Ksh 1,000
-    base_rate = 2.0
+    if mean <= 0:
+        return 0.0, 0.0
+
+    # Calculate 70% cap
+    max_comp = mean * 0.7
     
-    # Volatility Loading: (Volatility / Mean)
-    vol_loading = (volatility / mean) if mean > 0 else 0
-    rate = base_rate * (1 + vol_loading)
+    # Base premium logic (2% of mean)
+    base = mean * 0.02
     
-    # Age Loading: 1% for every year over 35
-    if age > 35:
-        age_loading = (age - 35) * 0.01
-        rate = rate * (1 + age_loading)
+    # Risk loading logic
+    premium = base + (dip_probability * 10) # Example logic
     
-    # Deferred Discount
-    discount = 0.0
-    if deferred_days == 60:
-        discount = 0.15
-    elif deferred_days == 90:
-        discount = 0.30
-    
-    rate = rate * (1 - discount)
-    
-    # Monthly Premium calculation
-    monthly_premium = (coverage_target / 1000) * rate
-    return round(monthly_premium, 2)
+    return round(premium, 2), round(max_comp, 2)
 
 
 INSURANCE_SCHEMES = {

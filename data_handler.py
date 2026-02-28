@@ -1,6 +1,8 @@
 import pandas as pd
 import pdfplumber
 import io
+import re
+import time
 
 def universal_parser(uploaded_file):
     if uploaded_file is None:
@@ -15,18 +17,24 @@ def universal_parser(uploaded_file):
             raw_df = pd.read_csv(uploaded_file)
             
         elif filename.endswith('.pdf'):
-            # Read PDF directly from uploaded bytes
+            start_time = time.time()
+            data = []
             with pdfplumber.open(io.BytesIO(uploaded_file.getvalue())) as pdf:
-                all_rows = []
                 for page in pdf.pages:
-                    table = page.extract_table()
-                    if table:
-                        all_rows.extend(table)
-            
-            if len(all_rows) > 1:
-                headers = [str(h).replace('\n', ' ').strip() for h in all_rows[0] if h is not None]
-                data = all_rows[1:]
-                raw_df = pd.DataFrame(data, columns=headers)
+                    if time.time() - start_time > 5:
+                        return pd.DataFrame() # Stop timer: Abort early
+                    text = page.extract_text()
+                    if text:
+                        for line in text.split('\n'):
+                            date_m = re.search(r'\d{2,4}[-/]\d{2}[-/]\d{2,4}', line)
+                            amount_m = re.search(r'\b\d{1,3}(?:,\d{3})*\.\d{2}\b', line)
+                            if date_m and amount_m:
+                                data.append({
+                                    'Date': date_m.group(),
+                                    'Details': line,
+                                    'Paid In': amount_m.group().replace(',', '')
+                                })
+            raw_df = pd.DataFrame(data)
                 
         if not raw_df.empty:
             # Match required M-Pesa Columns
@@ -74,9 +82,12 @@ def universal_parser(uploaded_file):
                 df['Date'] = raw_df[date_col]
                 df['Description'] = raw_df[desc_col] if desc_col else 'Income'
                 df['Total Income'] = raw_df['Amount']
+            
+            if df.empty:
+                raise ValueError("No valid income data found in the file.")
+                
     except Exception as e:
-        print(f"Parsing error: {e}")
-        pass
+        raise ValueError(f"Invalid PDF format for M-Pesa: {e}")
 
     return df
 
@@ -93,17 +104,24 @@ def bank_parser(uploaded_file):
             raw_df = pd.read_csv(uploaded_file)
             
         elif filename.endswith('.pdf'):
+            start_time = time.time()
+            data = []
             with pdfplumber.open(io.BytesIO(uploaded_file.getvalue())) as pdf:
-                all_rows = []
                 for page in pdf.pages:
-                    table = page.extract_table()
-                    if table:
-                        all_rows.extend(table)
-            
-            if len(all_rows) > 1:
-                headers = [str(h).replace('\n', ' ').strip() for h in all_rows[0] if h is not None]
-                data = all_rows[1:]
-                raw_df = pd.DataFrame(data, columns=headers)
+                    if time.time() - start_time > 5:
+                        return pd.DataFrame() # Stop timer: Abort early
+                    text = page.extract_text()
+                    if text:
+                        for line in text.split('\n'):
+                            date_m = re.search(r'\d{2,4}[-/]\d{2}[-/]\d{2,4}', line)
+                            amount_m = re.search(r'\b\d{1,3}(?:,\d{3})*\.\d{2}\b', line)
+                            if date_m and amount_m:
+                                data.append({
+                                    'Date': date_m.group(),
+                                    'Details': line,
+                                    'Credit': amount_m.group().replace(',', '')
+                                })
+            raw_df = pd.DataFrame(data)
                 
         if not raw_df.empty:
             date_col, desc_col, amt_col = None, None, None
@@ -155,9 +173,12 @@ def bank_parser(uploaded_file):
                 df['Date'] = raw_df[date_col]
                 df['Description'] = raw_df[desc_col] if desc_col else 'Income'
                 df['Total Income'] = raw_df['Amount']
+                
+            if df.empty:
+                raise ValueError("No valid income data found in the file.")
+                
     except Exception as e:
-        print(f"Bank Parsing error: {e}")
-        pass
+        raise ValueError(f"Invalid PDF format for Bank: {e}")
 
     return df
 
@@ -186,12 +207,8 @@ def process_financial_data(mpesa_csv, bank_csv):
         combined_df['Total Income'] = combined_df['Total Income'].fillna(0)
         return combined_df
     
-    # Return mocked MVP data fallback if no sources provide valid data
-    mock_df = pd.DataFrame({
-        'Month': [1, 2, 3, 4, 5, 6],
-        'Date': ['Month 1', 'Month 2', 'Month 3', 'Month 4', 'Month 5', 'Month 6'],
-        'Total Income': [45000, 46000, 44000, 20000, 45000, 30000],
-        'Description': ['Mock Salary']*6,
-        'status': ['Paid', 'Paid', 'Paid', 'Paid', 'Paid', 'Paid']
-    })
-    return mock_df
+    # If no files were provided, return empty
+    if mpesa_csv is None and bank_csv is None:
+        return pd.DataFrame()
+        
+    raise ValueError("Invalid PDF format or no valid income data found.")

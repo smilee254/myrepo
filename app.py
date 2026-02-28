@@ -8,6 +8,11 @@ from pdf_generator import generate_stability_passport, submit_to_provider_api
 import time
 from datetime import datetime
 from engine import IDCS_Engine, calculate_custom_premium
+import sqlite3
+
+@st.cache_resource
+def load_idcs_model():
+    return IDCS_Engine()
 
 
 st.set_page_config(page_title="IDCS Dashboard", page_icon="🏦", layout="wide")
@@ -182,37 +187,36 @@ def toggle_shock():
     st.session_state.simulate_shock = not st.session_state.simulate_shock
 
 # -- AUTH STATE INIT --
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
 if "auth_step" not in st.session_state:
     st.session_state.auth_step = 1
 if "auth_email" not in st.session_state:
     st.session_state.auth_email = ""
 
 # -- LOGIN VIEW --
-if not st.session_state.authenticated:
+if not st.session_state.logged_in:
     _, center_col, _ = st.columns([1, 6, 1])
     
     with center_col:
-        st.markdown("<div class='login-container'>", unsafe_allow_html=True)
+        st.container(border=False)
         login_col1, login_col2 = st.columns([1, 1], gap="large")
         
         with login_col1:
             try:
-                st.image("financial_stability.png", width='stretch')
+                st.image("financial_stability.png", use_container_width=True)
             except Exception:
                 # Fallback if image not copied correctly
-                st.markdown("<div style='height:300px;background:#2a2a2a;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#666;'>[Hero Image Location]</div>", unsafe_allow_html=True)
+                st.info("Hero Image Location")
                 
         with login_col2:
-            st.markdown("<div style='padding: 2rem 0; padding-right: 2rem;'>", unsafe_allow_html=True)
             st.markdown("<h2 style='color: #e0e0e0; font-weight: 700; margin-bottom: 0px;'>Welcome Back</h2>", unsafe_allow_html=True)
             st.markdown("<p style='color: #9e9e9e; margin-bottom: 30px;'>Sign in to access your IDCS dashboard.</p>", unsafe_allow_html=True)
             
             if st.session_state.auth_step == 1:
                 email = st.text_input("Work Email", placeholder="name@company.co.ke", key="email_input")
                 
-                if st.button("Continue", type="primary", width='stretch'):
+                if st.button("Continue", type="primary", use_container_width=True):
                     if "@" in email and "." in email:
                         st.session_state.auth_email = email
                         st.session_state.auth_step = 2
@@ -223,8 +227,8 @@ if not st.session_state.authenticated:
             elif st.session_state.auth_step == 2:
                 st.markdown(f"<p style='color: #00d296; margin-bottom: 20px; font-weight: 600;'>{st.session_state.auth_email}</p>", unsafe_allow_html=True)
                 
-                if st.button("🔑 Sign in with Passkey", type="primary", width='stretch'):
-                    st.session_state.authenticated = True
+                if st.button("🔑 Sign in with Passkey", type="primary", use_container_width=True):
+                    st.session_state.logged_in = True
                     st.rerun()
                     
                 st.markdown("<div style='text-align: center; margin: 20px 0; color: #666;'>OR</div>", unsafe_allow_html=True)
@@ -234,22 +238,19 @@ if not st.session_state.authenticated:
                 
                 col_a, col_b = st.columns(2)
                 with col_a:
-                    if st.button("Sign In", width='stretch'):
+                    if st.button("Sign In", use_container_width=True):
                         if password:
-                            st.session_state.authenticated = True
+                            st.session_state.logged_in = True
                             st.rerun()
                         else:
                             st.error("Please enter your OTP or Password.")
                 with col_b:
-                    if st.button("← Back to Email", width='stretch'):
+                    if st.button("← Back to Email", use_container_width=True):
                         st.session_state.auth_step = 1
                         st.rerun()
                     
             st.markdown("<hr style='border: 0; border-top: 1px solid #333; margin: 30px 0;'>", unsafe_allow_html=True)
             st.markdown("<div style='text-align: center; font-size: 12px; color: #666;'><span title='Secure Connection'>🔒</span> Your data is encrypted and stored locally.</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-        st.markdown("</div>", unsafe_allow_html=True)
     
     st.stop()
 
@@ -272,12 +273,17 @@ with st.sidebar:
 
     # Initial Metric calculation for UI caps
     import numpy as np
+    st.session_state.dip_probability = 0
     if "financial_data" in st.session_state and st.session_state["financial_data"] is not None:
         df_fin = st.session_state["financial_data"]
         incomes = df_fin['Total Income'].tolist()
         incomes.append(current_income)
         st.session_state.live_mu = float(np.mean(incomes))
         st.session_state.live_sigma = float(np.std(incomes, ddof=0))
+        
+        dip_thresh = st.session_state.live_mu * 0.8
+        dip_count = sum(1 for x in incomes if x < dip_thresh)
+        st.session_state.dip_probability = (dip_count / len(incomes) * 100) if len(incomes) > 0 else 0
     
     # Local assignment for safe usage
     live_mu = st.session_state.live_mu
@@ -294,9 +300,9 @@ with st.sidebar:
     )
     st.caption(f"Waiting Period: {st.session_state.deferred_period} Days")
 
-    # Benefit target capped at 75% of mean
+    # Benefit target capped at 70% of mean
     mu_val = st.session_state.live_mu
-    max_benefit = mu_val * 0.75
+    max_benefit = mu_val * 0.70
     st.session_state.benefit_target = st.number_input(
         "Monthly Benefit Target (KES)",
         min_value=0.0,
@@ -305,17 +311,27 @@ with st.sidebar:
         step=1000.0
     )
 
-    st.info(f"Capped at 75% of mean: KES {max_benefit:,.0f}")
+    st.info(f"Capped at 70% of mean: KES {max_benefit:,.0f}")
+
+    # Session State Safety
+    if 'mu_val' not in st.session_state: 
+        st.session_state.mu_val = 0.0
+    if 'dip_prob' not in st.session_state:
+        st.session_state.dip_prob = st.session_state.get('dip_probability', 0.0)
+
+    user_age = st.session_state.age
+    user_deps = st.session_state.dependants
+    user_emp = st.session_state.employment_status
 
     # Calculate Custom Premium
     if mu_val > 0:
-        volatility = st.session_state.get('live_sigma', 0.0)
-        st.session_state.custom_premium = calculate_custom_premium(
-            mean=mu_val,
-            volatility=volatility,
-            age=st.session_state.age,
-            deferred_days=st.session_state.deferred_period,
-            coverage_target=st.session_state.benefit_target
+        st.session_state.mu_val = mu_val
+        st.session_state.custom_premium, st.session_state.max_comp = calculate_custom_premium(
+            mean=st.session_state.mu_val,
+            dip_probability=st.session_state.dip_prob,
+            age=user_age,
+            dependencies=user_deps,
+            employment_status=user_emp
         )
         st.markdown(f"""
         <div class="premium-glow">
@@ -365,18 +381,27 @@ with st.sidebar:
                     text2.markdown("<div style='margin-top: 4px; font-weight: 500;'>Loading Cloud Profile...</div>", unsafe_allow_html=True)
                 
                 try:
-                    user_res = requests.post("http://127.0.0.1:8000/user", json={
-                        "name": st.session_state.full_name,
-                        "age": st.session_state.age,
-                        "employment_type": st.session_state.employment_status
-                    })
-                    if user_res.status_code == 200:
-                        udata = user_res.json()
-                        st.session_state.current_user_id = udata["user_id"]
-                        
+                    name_escape = st.session_state.full_name.replace("'", "''")
+                    with sqlite3.connect("idcs.db", timeout=10.0) as conn:
+                        user_df = pd.read_sql(f"SELECT * FROM users WHERE name='{name_escape}'", conn)
+                        if not user_df.empty:
+                            user_id = user_df.iloc[0]['id']
+                            st.session_state.current_user_id = int(user_id)
+                            udata_is_new = False
+                            hist_df = pd.read_sql(f"SELECT income_amount as amount, status, month_index as month FROM income_history WHERE user_id={user_id} ORDER BY month_index", conn)
+                            udata_history = hist_df.to_dict('records') if not hist_df.empty else []
+                        else:
+                            cursor = conn.cursor()
+                            cursor.execute("INSERT INTO users (name, age, employment_type, src_cap, src_tax_bracket) VALUES (?, ?, ?, ?, ?)", (st.session_state.full_name, st.session_state.age, st.session_state.employment_status, 50000.0, 'Bracket 3'))
+                            conn.commit()
+                            st.session_state.current_user_id = cursor.lastrowid
+                            udata_is_new = True
+                            udata_history = []
+                    
+                    if True:
                         time.sleep(0.5)
                         icon2.markdown("<div class='icon-emerald'>✅</div>", unsafe_allow_html=True)
-                        if udata["is_new"]:
+                        if udata_is_new:
                             text2.markdown("<div style='margin-top: 4px; color: #aaa;'>New Profile Configured</div>", unsafe_allow_html=True)
                             st.session_state["financial_data"] = None
                         else:
@@ -395,8 +420,8 @@ with st.sidebar:
                             text3.markdown("<div style='margin-top: 4px; font-weight: 500;'>Refreshing Datasets...</div>", unsafe_allow_html=True)
                             
                         time.sleep(0.8)
-                        if not udata["is_new"] and udata["history"]:
-                            df_hist = pd.DataFrame(udata["history"])
+                        if not udata_is_new and udata_history:
+                            df_hist = pd.DataFrame(udata_history)
                             df_hist['Month'] = df_hist['month']
                             df_hist['Total Income'] = df_hist['amount']
                             st.session_state["financial_data"] = df_hist
@@ -410,10 +435,6 @@ with st.sidebar:
                         st.session_state.last_sync_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         status.update(label="Sync Completed!", state="complete", expanded=False)
                         st.success("Successfully synced all profile assets.")
-                    else:
-                        st.markdown('</div>', unsafe_allow_html=True)
-                        status.update(label="Sync Failed!", state="error", expanded=False)
-                        st.error("Invalid response from server.")
                 except Exception as e:
                     st.markdown('</div>', unsafe_allow_html=True)
                     status.update(label="Sync Error", state="error", expanded=False)
@@ -510,12 +531,14 @@ with col2:
     bank_upload = st.file_uploader("Upload Bank Statement (CSV or PDF)", type=["csv", "pdf"], key="bank")
 
 if st.button("Process Data", type="primary"):
-    df_processed = process_financial_data(mpesa_upload, bank_upload)
-    st.session_state["financial_data"] = df_processed
-    if not df_processed.empty:
+    try:
+        df_processed = process_financial_data(mpesa_upload, bank_upload)
+        st.session_state["financial_data"] = df_processed
         st.session_state.live_mu = float(df_processed['Total Income'].mean())
         st.session_state.live_sigma = float(df_processed.get('Total Income', pd.Series([0])).std())
-    else:
+    except ValueError as e:
+        st.error(str(e))
+        st.session_state["financial_data"] = None
         st.session_state.live_mu = 0
         st.session_state.live_sigma = 0
 
@@ -596,24 +619,34 @@ if check_btn or st.session_state.get('last_user'):
 
     with st.spinner("Analyzing actuarial parameters..."):
         try:
-            response = requests.post(
-                "http://127.0.0.1:8000/evaluate",
-                json={
-                    "name": st.session_state.full_name,
-                    "age": st.session_state.age,
-                    "employment_type": st.session_state.employment_status,
-                    "current_income": income_to_evaluate,
-                    "income_history": hist_payload,
-                    "premium": float(st.session_state.get('custom_premium', 0)),
-                    "deferred_period": int(st.session_state.get('deferred_period', 30))
-                }
+            name_escape = st.session_state.full_name.replace("'", "''")
+            with sqlite3.connect("idcs.db", timeout=10.0) as conn:
+                user_df = pd.read_sql(f"SELECT * FROM users WHERE name='{name_escape}'", conn)
+                cursor = conn.cursor()
+                if user_df.empty:
+                    cursor.execute("INSERT INTO users (name, age, employment_type, src_cap, src_tax_bracket) VALUES (?, ?, ?, ?, ?)", (st.session_state.full_name, st.session_state.age, st.session_state.employment_status, 50000.0, 'Bracket 3'))
+                    user_id = cursor.lastrowid
+                    if hist_payload:
+                        for idx, inc in enumerate(hist_payload):
+                            cursor.execute("INSERT INTO income_history (user_id, month_index, income_amount, status) VALUES (?, ?, ?, ?)", (user_id, idx+1, inc['amount'], inc['status']))
+                else:
+                    user_id = user_df.iloc[0]['id']
+                
+                cursor.execute("UPDATE users SET premium=?, deferred_period=? WHERE id=?", (float(st.session_state.get('custom_premium', 0)), int(st.session_state.get('deferred_period', 30)), user_id))
+                conn.commit()
+                
+            w_emp = 1.1 if st.session_state.employment_status == "SRC_Teacher" else 1.0
+            idcs_model = load_idcs_model()
+            eval_data = idcs_model.calculate_metrics(
+                income_history=hist_payload,
+                src_cap=50000.0,
+                current_income=income_to_evaluate,
+                w_emp=w_emp
             )
             
-            if response.status_code == 200:
-                data = response.json()
-                user = data["user"]
-                eval_data = data["evaluation"]
-                history = data.get("income_history", [])
+            if True:
+                user = {"name": st.session_state.full_name, "employment_type": st.session_state.employment_status, "src_cap": 50000.0}
+                history = hist_payload
                 
                 # Header Micro-humanization
                 st.markdown(f"<h3 style='color: #fff; margin-bottom: 24px;'>Habari, {user['name']}. Let's check your income health today.</h3>", unsafe_allow_html=True)
@@ -647,6 +680,14 @@ if check_btn or st.session_state.get('last_user'):
                 if eval_data['eligible']:
                     ai_ctx += f" Approved Payout: KES {eval_data['payout']:,.2f}."
                 st.markdown(f"<div id='idcs-ai-context' style='display:none;'>{ai_ctx}</div>", unsafe_allow_html=True)
+                
+                if eval_data.get('dip_probability', 0) > 0:
+                    prob = eval_data['dip_probability']
+                    pred_month = eval_data.get('predicted_dip_month') or 'a future month'
+                    if eval_data.get('risk_level') == 'CRITICAL':
+                        st.error(f"WARNING: Based on your history, you are {prob:.0f}% likely to incur an income dip in {pred_month}.")
+                    else:
+                        st.warning(f"WARNING: Based on your history, you are {prob:.0f}% likely to incur an income dip in {pred_month}.")
                 
                 if st.session_state.simulate_shock:
                     st.warning(f"⚠️ Simulated Mode Active! Evaluating with artificial 30% drop (Income = KES {income_to_evaluate:,.2f})")
@@ -697,7 +738,7 @@ if check_btn or st.session_state.get('last_user'):
 
                 with tab2:
                     st.markdown("### 6-Month Volatility Chart")
-                    if history:
+                    if history is not None and len(history) > 0:
                         months = [f"M-{6-i}" for i in range(len(history))] + ["Current"]
                         actuals = [h["amount"] for h in history] + [income_to_evaluate]
                         
@@ -720,7 +761,7 @@ if check_btn or st.session_state.get('last_user'):
                         )
                         st.plotly_chart(fig, width='stretch')
                     else:
-                        st.info("No income history available.")
+                        st.warning("Awaiting valid statement data to generate Actuarial History.")
 
                 with tab3:
                     st.markdown("### Risk Mitigation & Projections")
@@ -737,55 +778,21 @@ if check_btn or st.session_state.get('last_user'):
                             st.markdown("✅ **Consistent Payments:** No penalties for unpaid months applied.")
                             
                 with tab4:
-                    st.markdown("### Top Recommendation Cards")
-                    top_2 = scored_schemes[:2]
+                    st.markdown("### Market Recommendations")
+                    market_avg = st.session_state.get('custom_premium', 0) * 1.15 if st.session_state.get('custom_premium', 0) > 0 else 1500
                     
-                    rec_col1, rec_col2 = st.columns(2)
-                    for idx, (col, s) in enumerate(zip([rec_col1, rec_col2], top_2)):
-                        with col:
-                            border_color = "#00d296" if s['Match Score'] > 80 else "#ffcc00"
-                            st.markdown(f'''
-                            <div style="border: 2px solid {border_color}; padding: 20px; border-radius: 12px; margin-bottom: 10px; background-color: #1e1e1e;">
-                                <h4 style="margin-top: 0; color: #fff; font-size: 20px;">{s['Scheme Name']}</h4>
-                                <div style="font-size: 28px; font-weight: bold; color: {border_color};">{s['Match Score']}% Match</div>
-                                <div style="margin-top: 15px; color: #ccc; font-size: 15px;"><b>Coverage Limit:</b> {s['Coverage Limit']}</div>
-                                <div style="margin-top: 8px; color: #999; font-size: 14px;"><b>Annual Premium:</b> {s['Annual Premium']}</div>
-                            </div>
-                            ''', unsafe_allow_html=True)
-                            
-                            with st.popover("⚡ One-Click Apply", use_container_width=True):
-                                provider_name = s['Scheme Name'].split(' ')[0]
-                                st.warning(f"By clicking confirm, you authorize IDCS to share your Stability Index and Profile with {provider_name} for underwriting. Do you agree?")
-                                if st.button("Confirm Application", key=f"apply_{idx}", type="primary"):
-                                    pdf_path = f"passport_{idx}.pdf"
-                                    # Create the profile dictionary properly
-                                    profile_data = user_profile.copy()
-                                    profile_data['name'] = user['name']
-                                    profile_data['stability_score'] = eval_data['stability_score']
-                                    
-                                    generate_stability_passport(profile_data, s, pdf_path, "gauge.png")
-                                    ref_id = submit_to_provider_api(profile_data, pdf_path)
-                                    
-                                    st.success(f"Application submitted! Reference ID: {ref_id}. {provider_name} will contact you within 24 hours.")
-                                    with open(pdf_path, "rb") as pdf_file:
-                                        st.download_button(label="📄 Download Financial Passport", data=pdf_file, file_name=f"{provider_name}_passport.pdf", mime="application/pdf", key=f"dl_{idx}")
-                            
-                    def display_comparison_matrix(schemes):
-                        df = pd.DataFrame(schemes)
-                        
-                        def highlight_max(s):
-                            is_max = s == s.max()
-                            return ['background-color: lightblue; color: black;' if v else '' for v in is_max]
-                        
-                        styled_df = df.style.apply(highlight_max, subset=['Match Score']).format({"Match Score": "{:.0f}"})
-                        st.dataframe(styled_df, hide_index=True, use_container_width=True)
+                    st.markdown("Here is why our data-driven premium is better for you:")
+                    comp_df = pd.DataFrame([
+                        {"Scheme Type": "IDCS Custom Scheme", "Monthly Premium": f"KES {st.session_state.get('custom_premium', 0):,.2f}", "Calculated By": "Datapoints & Risk Probability"},
+                        {"Scheme Type": "Standard Market Alternative", "Monthly Premium": f"KES {market_avg:,.2f}", "Calculated By": "Market Avg + 15%"}
+                    ])
+                    st.dataframe(comp_df, hide_index=True, use_container_width=True)
+                    
 
-                    st.markdown("### Insurance Comparison Matrix")
-                    display_comparison_matrix(scored_schemes)
             else:
-                st.error(f"Evaluating failed (Status {response.status_code}): {response.text}")
-        except requests.exceptions.ConnectionError:
-            st.error("Failed to connect to the backend API. Please make sure the FastAPI server is running.")
+                st.error("Evaluating failed.")
+        except Exception as e:
+            st.error(f"Failed to process claim. Local Evaluation Error: {e}")
 else:
     st.info("👈 Enter your Full Name in the sidebar and evaluate to load data.")
 
