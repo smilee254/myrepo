@@ -268,23 +268,23 @@ with st.sidebar:
     st.session_state.employment_status = st.selectbox("Employment Status", ["Public Full-Time", "Private Contract", "Self-Employed/Jua Kali", "Unemployed"], index=0)
     st.session_state.dependants = st.number_input("Dependants", min_value=0, step=1, value=st.session_state.get("dependants", 0))
 
-    # st.markdown("---")
-    # st.markdown("### 🩺 Vision Model Doctor")
-    # def list_available_models():
-    #     import google.generativeai as genai
-    #     if "GEMINI_API_KEY" in st.secrets:
-    #         try:
-    #             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    #             models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    #             for m in models:
-    #                 st.sidebar.markdown(f"<code style='font-size:10px;'>{m}</code>", unsafe_allow_html=True)
-    #         except Exception as e:
-    #             st.sidebar.error("Could not list models. Check API Key.")
-    #     else:
-    #         st.sidebar.warning("Key missing for Doctor")
+    st.markdown("---")
+    st.markdown("### 🩺 Vision Model Doctor")
+    def list_available_models():
+        import google.generativeai as genai
+        if "GEMINI_API_KEY" in st.secrets:
+            try:
+                genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                for m in models:
+                    st.sidebar.markdown(f"<code style='font-size:10px;'>{m}</code>", unsafe_allow_html=True)
+            except Exception as e:
+                st.sidebar.error("Could not list models. Check API Key.")
+        else:
+            st.sidebar.warning("Key missing for Doctor")
     
-    # if st.sidebar.checkbox("Show Available AI Models"):
-    #     list_available_models()
+    if st.sidebar.checkbox("Show Available AI Models"):
+        list_available_models()
 
     st.markdown("---")
     st.markdown("### Current Month Data")
