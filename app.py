@@ -350,7 +350,8 @@ with st.sidebar:
             dip_probability=st.session_state.dip_prob,
             age=user_age,
             dependencies=user_deps,
-            employment_status=user_emp
+            employment_status=user_emp,
+            risk_score=st.session_state.get('risk_score', 0)
         )
         st.markdown(f"""
         <div class="premium-glow">
@@ -648,20 +649,41 @@ if "raw_income_data" in st.session_state and st.session_state["raw_income_data"]
     st.session_state["financial_data"] = df_monthly
     st.session_state.df_analysis = df_monthly
     
-    # 4. Predictive Logic Transition
+    # 4. Predictive Logic Transition (Prophet Integration)
     engine = load_idcs_model()
-    st.session_state.predictions = engine.predict_risk_horizon(df_monthly.rename(columns={'MonthGroup': 'month'}), mu)
-
+    # Prophet logic expects 'month' and 'mu'
+    predictions, risk_score, prophet_md = engine.predict_risk_horizon(df_monthly.rename(columns={'MonthGroup': 'month'}), mu)
+    st.session_state.predictions = predictions
+    st.session_state.risk_score = risk_score
+    
     # UI Analytics: 6-Month Risk Horizon
-    st.markdown("<h3 style='color: #fff;'>Predictive Risk Horizon (Next 6 Mo)</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='color: #fff;'>Prophet Risk Horizon (Next 6 Mo)</h3>", unsafe_allow_html=True)
+    
+    if prophet_md:
+        model, forecast = prophet_md
+        # 5. Visualization: Show Prophet forecast chart
+        fig_p = model.plot(forecast)
+        ax = fig_p.gca()
+        
+        # Highlight 'High Risk' months with a Red Overlay
+        threshold = mu * 0.7
+        future_forecast = forecast.tail(6)
+        for _, row in future_forecast.iterrows():
+            if row['yhat_lower'] < threshold:
+                ax.axvspan(row['ds'], row['ds'] + pd.DateOffset(months=1), color='red', alpha=0.2, label='High Risk Dip' if 'High Risk Dip' not in [l.get_label() for l in ax.get_lines()] else "")
+        
+        st.pyplot(fig_p)
+        
     if st.session_state.get('predictions'):
+        st.markdown("#### High Risk Horizon Alerts")
         pred_cols = st.columns(6)
         for idx, (p_col, p_data) in enumerate(zip(pred_cols, st.session_state.predictions)):
             with p_col:
                 # Flag 'High Risk Dip' if predicted < 0.7*mu
                 color = "#ff4b4b" if p_data['is_high_risk'] else "#00d296"
+                bg_alpha = "0.2" if p_data['is_high_risk'] else "0.05"
                 st.markdown(f"""
-                <div style='background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; border-left: 4px solid {color};'>
+                <div style='background: rgba({ "255,75,75" if p_data["is_high_risk"] else "255,255,255"}, {bg_alpha}); padding: 10px; border-radius: 8px; border-left: 4px solid {color};'>
                     <small style='color: #aaa;'>{p_data['month']}</small><br>
                     <b style='font-size: 14px;'>KES {p_data['predicted_income']:,.0f}</b>
                 </div>

@@ -8,3 +8,4 @@ uvicorn
 numpy
 pdfplumber
 tabula-py
+prophet

@@ -1,3 +1,4 @@
+from prophet import Prophet
 import numpy as np
 import pandas as pd
 
@@ -7,31 +8,53 @@ class IDCS_Engine:
 
     def predict_risk_horizon(self, df_monthly, mu):
         """
-        Simple forecasting for the next 6 months to detect potential 'High Risk Dips'.
+        Time-Series Forecasting using Prophet for the next 6 months.
         """
         if df_monthly.empty or mu <= 0:
-            return []
+            return [], 0, None
             
-        # Basic prediction based on historical volatility (sigma)
-        sigma = df_monthly['Total Income'].std()
+        # 1. Data Preparation for Prophet
+        # Expects df_monthly to have 'month' (YYYY-MM) and 'Total Income'
+        df_prophet = df_monthly.copy()
+        df_prophet['ds'] = pd.to_datetime(df_prophet['month'])
+        df_prophet = df_prophet.rename(columns={'Total Income': 'y'})
+        
+        # 2. Model Training
+        model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
+        model.fit(df_prophet[['ds', 'y']])
+        
+        # 3. 6-Month Horizon Forecast
+        future = model.make_future_dataframe(periods=6, freq='MS')
+        forecast = model.predict(future)
+        
+        # Extract predictions for the future 6 months
+        predictions_df = forecast.tail(6).copy()
+        
+        # 4. Risk Scoring & Loading Factor
+        # Dip Event: yhat_lower < (Average_Income * 0.7)
+        threshold = mu * 0.7
+        predictions_df['is_high_risk'] = predictions_df['yhat_lower'] < threshold
+        
+        risk_events = predictions_df['is_high_risk'].sum()
+        # Risk Score (0-100) based on frequency and depth of predicted dips
+        # Simple score: 1 risk event = 15 points, maxed at 100
+        depth_penalty = 0
+        if risk_events > 0:
+            avg_dip_depth = (threshold - predictions_df[predictions_df['is_high_risk']]['yhat_lower']).mean()
+            depth_penalty = min(50, (avg_dip_depth / threshold) * 100)
+            
+        risk_score = min(100, (risk_events * 10) + depth_penalty)
+        
         predictions = []
-        
-        last_month = pd.to_datetime(df_monthly['month'].iloc[-1])
-        
-        for i in range(1, 7):
-            next_month = last_month + pd.DateOffset(months=i)
-            # Projection: Expected value is mu, but we check if lower bound (mu - 1.5*sigma) dips below 70% threshold
-            # Or use a simpler approach: if historical min < 0.7 mu, flag potential recurrences
-            predicted_value = max(0, mu - (np.random.normal(0.1, 0.05) * sigma)) # Symbolic projection
-            is_high_risk = bool(predicted_value < (mu * 0.7))
-            
+        for _, row in predictions_df.iterrows():
             predictions.append({
-                "month": next_month.strftime('%Y-%m'),
-                "predicted_income": float(predicted_value),
-                "is_high_risk": is_high_risk
+                "month": row['ds'].strftime('%Y-%m'),
+                "predicted_income": float(row['yhat']),
+                "predicted_lower": float(row['yhat_lower']),
+                "is_high_risk": bool(row['is_high_risk'])
             })
             
-        return predictions
+        return predictions, risk_score, (model, forecast)
 
     def calculate_metrics(self, income_history, src_cap, current_income, w_emp=1.0):
         """
@@ -126,10 +149,10 @@ class IDCS_Engine:
             "next_dip_idx": next_dip_idx
         }
 
-def calculate_custom_premium(mean, dip_probability, age, dependencies, employment_status):
+def calculate_custom_premium(mean, dip_probability, age, dependencies, employment_status, risk_score=0):
     """
     Calculate IDCS custom premium based on deterministic Actuarial Formula.
-    Premium = Base + Dip_Probability_Loading
+    Premium = Base + (Dip_Probability_Loading * Risk_Score_Factor)
     """
     if mean <= 0:
         return 0.0, 0.0
@@ -140,10 +163,16 @@ def calculate_custom_premium(mean, dip_probability, age, dependencies, employmen
     # Base premium logic (2% of mean)
     base = mean * 0.02
     
-    # Risk loading logic
-    premium = base + (dip_probability * 10) # Example logic
+    # Risk loading logic (incorporating Prophet risk score)
+    # risk_score is 0-100, normalize as a multiplier (1.0 to 2.5)
+    r_multiplier = 1.0 + (risk_score / 100 * 1.5)
     
-    return round(premium, 2), round(max_comp, 2)
+    # Historical dip probability adds a secondary load
+    prob_load = (dip_probability / 100) * (mean * 0.01)
+    
+    premium = (base + prob_load) * r_multiplier
+    
+    return round(float(premium), 2), round(float(max_comp), 2)
 
 
 INSURANCE_SCHEMES = {
