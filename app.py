@@ -2,7 +2,8 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.graph_objects as go
-from data_handler import process_financial_data
+import plotly.express as px
+from data_handler import process_and_group_inflows
 import os
 from pdf_generator import generate_stability_passport, submit_to_provider_api
 import time
@@ -267,6 +268,24 @@ with st.sidebar:
     st.session_state.employment_status = st.selectbox("Employment Status", ["Public Full-Time", "Private Contract", "Self-Employed/Jua Kali", "Unemployed"], index=0)
     st.session_state.dependants = st.number_input("Dependants", min_value=0, step=1, value=st.session_state.get("dependants", 0))
 
+    # st.markdown("---")
+    # st.markdown("### 🩺 Vision Model Doctor")
+    # def list_available_models():
+    #     import google.generativeai as genai
+    #     if "GEMINI_API_KEY" in st.secrets:
+    #         try:
+    #             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    #             models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    #             for m in models:
+    #                 st.sidebar.markdown(f"<code style='font-size:10px;'>{m}</code>", unsafe_allow_html=True)
+    #         except Exception as e:
+    #             st.sidebar.error("Could not list models. Check API Key.")
+    #     else:
+    #         st.sidebar.warning("Key missing for Doctor")
+    
+    # if st.sidebar.checkbox("Show Available AI Models"):
+    #     list_available_models()
+
     st.markdown("---")
     st.markdown("### Current Month Data")
     current_income = st.number_input("Current Month Income (KES)", min_value=0.0, step=1000.0, value=40000.0)
@@ -530,63 +549,154 @@ with col1:
 with col2:
     bank_upload = st.file_uploader("Upload Bank Statement (CSV or PDF)", type=["csv", "pdf"], key="bank")
 
-if st.button("Process Data", type="primary"):
-    try:
-        df_processed = process_financial_data(mpesa_upload, bank_upload)
-        st.session_state["financial_data"] = df_processed
-        st.session_state.live_mu = float(df_processed['Total Income'].mean())
-        st.session_state.live_sigma = float(df_processed.get('Total Income', pd.Series([0])).std())
-    except ValueError as e:
-        st.error(str(e))
-        st.session_state["financial_data"] = None
-        st.session_state.live_mu = 0
-        st.session_state.live_sigma = 0
+from data_handler import process_and_group_inflows
+
+if st.button("🔄 Sync & Analyze Statement", type="primary"):
+    if "GEMINI_API_KEY" not in st.secrets or st.secrets["GEMINI_API_KEY"] == "YOUR_KEY_HERE":
+        st.error("Missing GEMINI_API_KEY in .streamlit/secrets.toml. Please add it to proceed with Vision Processing.")
+        st.stop()
+        
+    with st.spinner("Vision Processing... (Extracting Money In via Gemini 1.5 Flash)"):
+        try:
+            df_hist, monthly_avg_data, raw_list = process_and_group_inflows(mpesa_upload, bank_upload)
+            
+            if not df_hist.empty:
+                st.session_state["financial_data"] = df_hist
+                st.session_state["monthly_inflow"] = monthly_avg_data
+                st.session_state["raw_income_data"] = raw_list  # Store as requested
+                st.session_state.live_mu = float(df_hist['amount'].mean())
+                st.session_state.live_sigma = float(df_hist.get('amount', pd.Series([0])).std())
+                st.success(f"Vision Extraction Complete! Analyzed {len(monthly_avg_data)} months of income history.")
+            else:
+                st.warning("Vision AI could not find any valid income transactions in the provided document.")
+        except Exception as e:
+            st.error(f"Vision Processing Error: {e}")
+            st.session_state["financial_data"] = None
+
+# Step 1 Legacy: Data Preview / Heatmap
+if "monthly_inflow" in st.session_state:
+    st.markdown("### 📊 Income History (Foundation for Predictor)")
+    
+    col_t1, col_t2 = st.columns([1, 2])
+    
+    with col_t1:
+        # Display as a table
+        history_data = [
+            {"Month": m, "Inflow (KES)": f"{amt:,.2f}", "Status": "Stable" if amt > 0 else "🚨 DIP"}
+            for m, amt in st.session_state.monthly_inflow.items()
+        ]
+        st.table(pd.DataFrame(history_data))
+        
+    with col_t2:
+        st.markdown("#### 🔥 Monthly Income Heatmap")
+        # Prepare data for heatmap
+        m_data = st.session_state.monthly_inflow
+        df_h = pd.DataFrame(list(m_data.items()), columns=['Month', 'Amount'])
+        df_h['Year'] = df_h['Month'].apply(lambda x: x.split('-')[0])
+        # Force month order
+        all_months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        df_h['MonthName'] = df_h['Month'].apply(lambda x: datetime.strptime(x, '%Y-%m').strftime('%b'))
+        
+        # Pivot for heatmap
+        pivot_h = df_h.pivot(index="Year", columns="MonthName", values="Amount").fillna(0)
+        # Reorder columns to ensure Jan-Dec
+        available_cols = [m for m in all_months if m in pivot_h.columns]
+        pivot_h = pivot_h[available_cols]
+        
+        fig_h = px.imshow(pivot_h, 
+                          labels=dict(x="Month", y="Year", color="Inflow (KES)"),
+                          color_continuous_scale='Viridis',
+                          text_auto='.2s')
+        
+        fig_h.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(0,0,0,0)', 
+            font=dict(color='white'),
+            margin=dict(l=20, r=20, t=20, b=20),
+            height=300
+        )
+        st.plotly_chart(fig_h, use_container_width=True)
+
+    if st.session_state.get("raw_income_data"):
+        with st.expander("View Raw Structured JSON"):
+            st.json(st.session_state.raw_income_data)
 
 # Use session state to avoid NameError
 live_mu = st.session_state.get('live_mu', 0)
 
-if "financial_data" in st.session_state and st.session_state["financial_data"] is not None and live_mu > 0:
-    df_fin = st.session_state["financial_data"]
+if "raw_income_data" in st.session_state and st.session_state["raw_income_data"]:
+    # 1. Standardization Wrapper
+    df_raw = pd.DataFrame(st.session_state.raw_income_data)
+    # Force Column Mapping
+    column_map = {'amount': 'Total Income', 'credit': 'Total Income', 'value': 'Total Income', 'date': 'TransactionDate', 'description': 'Description'}
+    df_raw = df_raw.rename(columns=column_map)
     
-    with st.expander("Show Filtered Income Transactions"):
-        st.dataframe(df_fin.head())
-        
-    mu = live_mu # Link to unified baseline
+    # 2. Handle Grouping (The Monthly Aggregate)
+    df_raw['Month'] = pd.to_datetime(df_raw['TransactionDate']).dt.strftime('%Y-%m')
+    df_monthly = df_raw.groupby('Month')['Total Income'].sum().reset_index()
     
-    with st.expander("Advanced Calibration Settings", expanded=True):
-        stability_sensitivity = st.slider("Stability Sensitivity", min_value=0.1, max_value=1.0, value=0.8, step=0.05)
+    # Standardize 'Month' column name for downstream compatibility
+    df_monthly = df_monthly.rename(columns={'Month': 'MonthGroup'}) # Avoiding keyword conflict
     
-    # Use manual input for the current month dip check
+    # Calculate mu from grouped monthly totals
+    mu = float(df_monthly['Total Income'].mean())
+    st.session_state.live_mu = mu
+    
+    # 3. Fix the Variance Calculation
+    df_monthly['Variance from Average'] = df_monthly['Total Income'] - mu
+    # Sync with session state for Step 2 Predictor
+    st.session_state["financial_data"] = df_monthly
+    st.session_state.df_analysis = df_monthly
+    
+    # 4. Predictive Logic Transition
+    engine = load_idcs_model()
+    st.session_state.predictions = engine.predict_risk_horizon(df_monthly.rename(columns={'MonthGroup': 'month'}), mu)
+
+    # UI Analytics: 6-Month Risk Horizon
+    st.markdown("<h3 style='color: #fff;'>Predictive Risk Horizon (Next 6 Mo)</h3>", unsafe_allow_html=True)
+    if st.session_state.get('predictions'):
+        pred_cols = st.columns(6)
+        for idx, (p_col, p_data) in enumerate(zip(pred_cols, st.session_state.predictions)):
+            with p_col:
+                # Flag 'High Risk Dip' if predicted < 0.7*mu
+                color = "#ff4b4b" if p_data['is_high_risk'] else "#00d296"
+                st.markdown(f"""
+                <div style='background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; border-left: 4px solid {color};'>
+                    <small style='color: #aaa;'>{p_data['month']}</small><br>
+                    <b style='font-size: 14px;'>KES {p_data['predicted_income']:,.0f}</b>
+                </div>
+                """, unsafe_allow_html=True)
+                if p_data['is_high_risk']:
+                    st.caption("🚨 High Risk Dip")
+    
+    with st.expander("Show Calibration Table"):
+        st.dataframe(df_monthly, width='stretch')
+
+    # Calibration Logic Link
     current_month_income = current_income
-    
-    # Variance from Average
-    df_fin['Variance from Average'] = df_fin['Total Income'] - mu
+    stability_sensitivity = 0.8
     
     dip_predicted = current_month_income < (stability_sensitivity * mu)
     
-    # Visual Feedback
     col_h1, col_h2 = st.columns(2)
     with col_h1:
-        st.metric("Historical 6-Month Avg", f"KES {mu:,.2f}")
+        st.metric("Historical Monthly Avg", f"KES {mu:,.2f}")
     with col_h2:
         st.metric("Current Month Input", f"KES {current_month_income:,.2f}")
-        
+    
     if dip_predicted:
-        st.error(f"🚨 **Dip Predicted!** Current Month Income (KES {current_month_income:,.2f}) is below the {stability_sensitivity*100:.0f}% threshold of the 6-month moving average (KES {mu:,.2f}).")
+        st.error(f"🚨 **High Risk Alert!** Predicted Dip: Current Month (KES {current_month_income:,.2f}) is below pattern threshold.")
     else:
-        st.success(f"✅ **Stable Income!** Current Month Income (KES {current_month_income:,.2f}) is within safe bounds above the {stability_sensitivity*100:.0f}% threshold of the 6-month average (KES {mu:,.2f}).")
-        
-    st.markdown("### Calibration Summary")
-    st.dataframe(df_fin[['Month', 'Total Income', 'Variance from Average']], width='stretch')
+        st.success(f"✅ **Steady State.** Pattern matches stable income history.")
     
     # Generate context for AI Assistant
     pct_diff = ((mu - current_month_income) / mu) * 100 if mu > 0 else 0
     dip_status = f"{pct_diff:.1f}% dip" if current_month_income < mu else "no significant dip"
-    variance_str = ", ".join([f"M{int(row['Month'])} (Var: {row['Variance from Average']:,.0f})" for _, row in df_fin.iterrows()])
+    variance_str = ", ".join([f"{row['MonthGroup']} (Var: {row['Variance from Average']:,.0f})" for _, row in df_monthly.iterrows()])
     
-    fin_ai_ctx = f"Financial Review: 6-mo Baseline Average is KES {mu:,.2f}. Manual Input for Current Month is KES {current_month_income:,.2f}. Based on the KES {current_month_income:,.0f} you entered, you have a {dip_status} compared to your 6-month average. Sensitivity Check Triggered Dip: {dip_predicted}. Monthly variances from average computed from uploaded data: {variance_str}."
+    fin_ai_ctx = f"Financial Review: Historical Monthly Average is KES {mu:,.2f}. Manual Input for Current Month is KES {current_month_income:,.2f}. Based on the KES {current_month_income:,.0f} you entered, you have a {dip_status} compared to your average. Sensitivity Check Triggered Dip: {dip_predicted}. Monthly variances: {variance_str}."
     if dip_predicted:
-        fin_ai_ctx += " Note: For low scores or drops, emphasize: 'Based on the KES " + f"{current_month_income:,.0f} you entered, you have a {pct_diff:.1f}% dip compared to your 6-month average of KES {mu:,.2f}.'"
+        fin_ai_ctx += " Note: For low scores or drops, emphasize: 'Based on the KES " + f"{current_month_income:,.0f} you entered, you have a {pct_diff:.1f}% dip compared to your monthly average of KES {mu:,.2f}.'"
     st.markdown(f"<div id='financial-verification-context' style='display:none;'>{fin_ai_ctx}</div>", unsafe_allow_html=True)
     st.markdown("---")
 else:

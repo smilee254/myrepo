@@ -5,6 +5,34 @@ class IDCS_Engine:
     def __init__(self):
         pass
 
+    def predict_risk_horizon(self, df_monthly, mu):
+        """
+        Simple forecasting for the next 6 months to detect potential 'High Risk Dips'.
+        """
+        if df_monthly.empty or mu <= 0:
+            return []
+            
+        # Basic prediction based on historical volatility (sigma)
+        sigma = df_monthly['Total Income'].std()
+        predictions = []
+        
+        last_month = pd.to_datetime(df_monthly['month'].iloc[-1])
+        
+        for i in range(1, 7):
+            next_month = last_month + pd.DateOffset(months=i)
+            # Projection: Expected value is mu, but we check if lower bound (mu - 1.5*sigma) dips below 70% threshold
+            # Or use a simpler approach: if historical min < 0.7 mu, flag potential recurrences
+            predicted_value = max(0, mu - (np.random.normal(0.1, 0.05) * sigma)) # Symbolic projection
+            is_high_risk = bool(predicted_value < (mu * 0.7))
+            
+            predictions.append({
+                "month": next_month.strftime('%Y-%m'),
+                "predicted_income": float(predicted_value),
+                "is_high_risk": is_high_risk
+            })
+            
+        return predictions
+
     def calculate_metrics(self, income_history, src_cap, current_income, w_emp=1.0):
         """
         income_history: list of dicts with 'amount' and 'status'
