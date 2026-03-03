@@ -27,6 +27,10 @@ if "stability_score" not in st.session_state:
     st.session_state.stability_score = 0
 if "simulate_shock" not in st.session_state:
     st.session_state.simulate_shock = False
+if "selected_plan" not in st.session_state:
+    st.session_state.selected_plan = None
+if "final_premium" not in st.session_state:
+    st.session_state.final_premium = 0.0
 
 # Inject Custom CSS
 
@@ -140,6 +144,35 @@ div[data-testid="stStatusWidget"] {
 .roadmap-label {
     font-size: 12px;
     color: #aaa;
+}
+.plan-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+.plan-card:hover {
+    border-color: #00d296;
+    background: rgba(0, 210, 150, 0.05);
+}
+.plan-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+}
+.plan-price {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #00d296;
+    margin-bottom: 8px;
+}
+.plan-details {
+    font-size: 0.9rem;
+    color: #aaa;
+    margin-bottom: 20px;
+    min-height: 4.5em; /* Keep heights consistent */
 }
 </style>
 """, unsafe_allow_html=True)
@@ -690,6 +723,74 @@ if "raw_income_data" in st.session_state and st.session_state["raw_income_data"]
                 """, unsafe_allow_html=True)
                 if p_data['is_high_risk']:
                     st.caption("🚨 High Risk Dip")
+
+    # --- NEW: DYNAMIC VS. UPFRONT PRICING LOGIC ---
+    st.markdown("---")
+    st.markdown("<h3 style='color: #fff; text-align: center;'>Choose Your Income Safety Plan</h3>", unsafe_allow_html=True)
+    
+    # 1. CALCULATE BASE PREMIUMS
+    base_rate = st.session_state.get('custom_premium', mu * 0.02)
+    next_6_months_premiums = []
+    
+    for p_data in st.session_state.predictions:
+        # Formula: Monthly_Premium = (Base_Rate * (1 + Risk_Score_Monthly))
+        # Risk_Score_Monthly: 0.5 if high risk, else 0
+        risk_score_monthly = 0.5 if p_data['is_high_risk'] else 0.0
+        m_premium = base_rate * (1 + risk_score_monthly)
+        next_6_months_premiums.append(m_premium)
+    
+    # 2. DEFINE THE TWO PATHS
+    # Path A (Dynamic): Current premium + 5% convenience fee
+    dynamic_premium = base_rate * 1.05
+    
+    # Path B (Upfront): Sum of 6 months - 15% discount
+    upfront_total = sum(next_6_months_premiums) * 0.85
+    savings = sum(next_6_months_premiums) - upfront_total
+
+    # 3. CREATE THE SELECTION UI
+    plan_col1, plan_col2 = st.columns(2, gap="large")
+    
+    with plan_col1:
+        st.markdown(f"""
+        <div class="plan-card">
+            <div class="plan-title">📈 Pay-As-You-Earn</div>
+            <div class="plan-price">KES {dynamic_premium:,.0f}<span style='font-size: 14px; font-weight: 400; color: #666;'>/mo</span></div>
+            <div class="plan-details">
+                Monthly billing that adjusts with AI risk forecasts.<br>
+                Includes 5% convenience fee. Prices fluctuate with stability index.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Select Monthly", type="secondary", use_container_width=True):
+            st.session_state.selected_plan = "Monthly"
+            st.session_state.final_premium = dynamic_premium
+            st.rerun()
+
+    with plan_col2:
+        st.markdown(f"""
+        <div class="plan-card" style="border-color: rgba(0, 210, 150, 0.4); background: rgba(0, 210, 150, 0.02);">
+            <div class="plan-title">🛡️ 6-Month Shield</div>
+            <div class="plan-price">KES {upfront_total:,.0f}<span style='font-size: 14px; font-weight: 400; color: #666;'> Total</span></div>
+            <div class="plan-details">
+                One-time payment for 6 months of guaranteed coverage.<br>
+                <b>15% Stability Discount Included.</b> Save KES {savings:,.0f}!
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Select Upfront", type="primary", use_container_width=True):
+            st.session_state.selected_plan = "Upfront"
+            st.session_state.final_premium = upfront_total
+            st.rerun()
+
+    # 5. FEEDBACK
+    if st.session_state.selected_plan:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.session_state.selected_plan == "Upfront":
+            st.success(f"🎊 **Plan locked!** You saved KES {savings:,.0f} compared to the dynamic forecast. Your 6-month shield is active.")
+        else:
+            st.info(f"✅ **Monthly Plan Active.** Your subscription is set to KES {dynamic_premium:,.0f}/mo. Premium will refresh next month based on history.")
+    
+    st.markdown("---")
     
     with st.expander("Show Calibration Table"):
         st.dataframe(df_monthly, width='stretch')
