@@ -119,8 +119,24 @@ def inject_ai_assistant():
                         if (finCtxEl) {
                             activeContext += "\\nCalibration Summary Data: " + finCtxEl.textContent;
                         }
+
+                        const forecastEl = parentDoc.getElementById("idcs-forecast-context");
+                        const forecastData = forecastEl ? forecastEl.textContent : "null";
                         
-                        const systemPrompt = "You are the IDCS Smart Broker. Using the user's name [name], stability score [score], and the M-Pesa CSV analysis, justify the Match Score.\\nExample response: 'Jambo [Name], I recommend Britam Family Income Protection with an 88% match because your M-Pesa history shows high volatility which this plan specifically covers with a 10% inflation-adjusted monthly payout.'\\n\\nWebsite Context:\\n" + activeContext + "\\n\\nKnowledge Base:\\n" + JSON.stringify({kb_json});
+                        let systemPrompt = "Your task is to analyze the CURRENT USER DATA provided in the context below.\\n";
+                        systemPrompt += "- If the Prophet 'yhat' (prediction) drops below the 'protection_cap', identify the SPECIFIC MONTH and the PERCENTAGE DROP.\\n";
+                        systemPrompt += "- Format your response as: 'I've analyzed your patterns. You have a [X]% chance of a dip in [Month].'\\n";
+                        systemPrompt += "- Do NOT use example data. Only speak to the numbers provided.\\n";
+                        systemPrompt += "- Knowledge Base: " + JSON.stringify({kb_json}) + "\\n";
+                        systemPrompt += "- Current User Forecast Data: " + forecastData + "\\n";
+                        systemPrompt += "- Application Context: " + activeContext;
+
+                        // Logic Guardrail: No data
+                        if (forecastData === "null" || forecastData === "[]") {
+                            replyNode.textContent = "Please upload your M-Pesa statement so I can analyze your specific risk patterns.";
+                            chatInput.disabled = false;
+                            return;
+                        }
 
                         try {
                             const response = await fetch("http://127.0.0.1:8000/chat", {

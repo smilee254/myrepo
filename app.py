@@ -1,4 +1,5 @@
 import streamlit as st
+import json
 import requests
 import pandas as pd
 import plotly.graph_objects as go
@@ -31,6 +32,8 @@ if "selected_plan" not in st.session_state:
     st.session_state.selected_plan = None
 if "final_premium" not in st.session_state:
     st.session_state.final_premium = 0.0
+if "prophet_forecast" not in st.session_state:
+    st.session_state.prophet_forecast = None
 
 # Inject Custom CSS
 
@@ -689,6 +692,12 @@ if "raw_income_data" in st.session_state and st.session_state["raw_income_data"]
     st.session_state.predictions = predictions
     st.session_state.risk_score = risk_score
     
+    if prophet_md:
+        _, forecast = prophet_md
+        # Save forecast summary for AI Assistant (Dynamic)
+        summary_df = forecast.tail(6)[['ds', 'yhat', 'yhat_lower']]
+        st.session_state.prophet_forecast = summary_df
+    
     # UI Analytics: 6-Month Risk Horizon
     st.markdown("<h3 style='color: #fff;'>Prophet Risk Horizon (Next 6 Mo)</h3>", unsafe_allow_html=True)
     
@@ -817,9 +826,15 @@ if "raw_income_data" in st.session_state and st.session_state["raw_income_data"]
     dip_status = f"{pct_diff:.1f}% dip" if current_month_income < mu else "no significant dip"
     variance_str = ", ".join([f"{row['MonthGroup']} (Var: {row['Variance from Average']:,.0f})" for _, row in df_monthly.iterrows()])
     
-    fin_ai_ctx = f"Financial Review: Historical Monthly Average is KES {mu:,.2f}. Manual Input for Current Month is KES {current_month_income:,.2f}. Based on the KES {current_month_income:,.0f} you entered, you have a {dip_status} compared to your average. Sensitivity Check Triggered Dip: {dip_predicted}. Monthly variances: {variance_str}."
-    if dip_predicted:
-        fin_ai_ctx += " Note: For low scores or drops, emphasize: 'Based on the KES " + f"{current_month_income:,.0f} you entered, you have a {pct_diff:.1f}% dip compared to your monthly average of KES {mu:,.2f}.'"
+    # Prepare Forecast JSON for AI Assistant
+    if st.session_state.prophet_forecast is not None:
+        # Convert DataFrame to a web-friendly JSON string
+        forecast_json = st.session_state.prophet_forecast.to_json(date_format='iso', orient='records')
+    else:
+        forecast_json = "null"
+    st.markdown(f"<div id='idcs-forecast-context' style='display:none;'>{forecast_json}</div>", unsafe_allow_html=True)
+    
+    fin_ai_ctx = f"Financial Review: Historical Monthly Average is KES {mu:,.2f}. Manual Input for Current Month is KES {current_month_income:,.2f}. Stability Score: {st.session_state.get('stability_score', 0):.1f}. Risk Score: {st.session_state.get('risk_score', 0):.1f}. Dip Status: {dip_status}. Variance Trace: {variance_str}."
     st.markdown(f"<div id='financial-verification-context' style='display:none;'>{fin_ai_ctx}</div>", unsafe_allow_html=True)
     st.markdown("---")
 else:
@@ -908,8 +923,9 @@ if check_btn or st.session_state.get('last_user'):
                 top_matches_str = ", ".join([f"{s['Scheme Name']} ({s['Match Score']}%)" for s in scored_schemes[:2]])
                 
                 # Context integration for AI (Passed from Python Backend to Client-side Window Context)
+                # Context integration for AI (Passed from Python Backend to Client-side Window Context)
                 identity_ctx = f"Full Name: {st.session_state.get('full_name', '')}, Age: {st.session_state.get('age', '')}, Employment Status: {st.session_state.get('employment_status', '')}, Dependants: {st.session_state.get('dependants', '')}."
-                ai_ctx = f"User Profile: {identity_ctx} Model User: {user['name']} ({user['employment_type']}). Income Checked: KES {income_to_evaluate:,.2f}. Stability Score: {eval_data['stability_score']:.1f}/100. Average Income: KES {eval_data['mu']:,.2f}. Population Sigma: KES {eval_data['sigma']:,.2f}. Dip Detected: {eval_data['dip_detected']}. Eligible: {eval_data['eligible']}. Top Matches: {top_matches_str}."
+                ai_ctx = f"User Profile: {identity_ctx}. Stability Score: {eval_data['stability_score']:.1f}/100. Average Income: KES {eval_data['mu']:,.2f}. Dip Detected: {eval_data['dip_detected']}. Eligible: {eval_data['eligible']}. Plan Selection: {st.session_state.get('selected_plan', 'None')}. Protection Cap: {st.session_state.get('protection_cap', 50000.0)}."
                 if eval_data['eligible']:
                     ai_ctx += f" Approved Payout: KES {eval_data['payout']:,.2f}."
                 st.markdown(f"<div id='idcs-ai-context' style='display:none;'>{ai_ctx}</div>", unsafe_allow_html=True)
