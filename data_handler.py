@@ -113,6 +113,34 @@ class IncomeVisionExtractor:
             st.error(f"AI Vision Error: {e}")
             return []
 
+    def summarize_data(self, raw_data: List[Dict]) -> str:
+        """
+        Uses Gemini to explain the extracted data in plain English.
+        """
+        if not self.model or not raw_data:
+            return "No data available to summarize."
+
+        prompt = f"""
+        Explain this extracted financial data in plain English for a non-technical user.
+        Focus on:
+        1. The number of transactions found.
+        2. The date range covered.
+        3. The primary sources of income identified (from descriptions).
+        4. Any clear patterns or major deposits.
+        
+        DATA:
+        {json.dumps(raw_data, indent=2)}
+        
+        Keep the explanation helpful, transparent, and concise (max 150 words).
+        """
+        try:
+            # Use a slightly different config for text summary (non-JSON)
+            summary_model = genai.GenerativeModel(model_name="models/gemini-2.5-flash")
+            response = summary_model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            return f"Error generating summary: {e}"
+
 # --- 3. Data Anchoring & Monthly Aggregation ---
 
 def process_and_group_inflows(mpesa_file=None, bank_file=None):
@@ -153,3 +181,8 @@ def process_and_group_inflows(mpesa_file=None, bank_file=None):
     sorted_monthly = dict(sorted(monthly_inflow.items()))
     
     return df, sorted_monthly, all_inflows
+
+def summarize_data(raw_data: List[Dict]) -> str:
+    """Standalone wrapper for UI calls."""
+    extractor = IncomeVisionExtractor()
+    return extractor.summarize_data(raw_data)

@@ -124,7 +124,7 @@ def inject_ai_assistant():
                         const forecastData = forecastEl ? forecastEl.textContent : "null";
                         
                         let systemPrompt = "Your task is to analyze the CURRENT USER DATA provided in the context below.\\n";
-                        systemPrompt += "- If the Prophet 'yhat' (prediction) drops below the 'protection_cap', identify the SPECIFIC MONTH and the PERCENTAGE DROP.\\n";
+                        systemPrompt += "- If the 'Predicted Income Path' drops below the 'protection_cap', identify the SPECIFIC MONTH and the PERCENTAGE DROP.\\n";
                         systemPrompt += "- Format your response as: 'I've analyzed your patterns. You have a [X]% chance of a dip in [Month].'\\n";
                         systemPrompt += "- Do NOT use example data. Only speak to the numbers provided.\\n";
                         systemPrompt += "- Knowledge Base: " + JSON.stringify({kb_json}) + "\\n";

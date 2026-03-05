@@ -8,6 +8,8 @@ class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
     name = Column(String)
+    email = Column(String, unique=True)
+    password_hash = Column(String)
     age = Column(Integer)
     employment_type = Column(String)
     src_tax_bracket = Column(String)
