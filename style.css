@@ -7,10 +7,30 @@ body,
     font-family: 'Inter', sans-serif !important;
 }
 
-/* Background overrides for Carbon theme */
-.stApp {
-    background-color: #121212 !important;
-    color: #e0e0e0 !important;
+/* Pictorial Branding Integration: Image background injected via Python function set_idcs_branding() */
+
+.idcs-logo-container {
+    text-align: center;
+    padding: 20px;
+    margin-bottom: 20px;
+    filter: drop-shadow(0 0 10px rgba(0, 210, 150, 0.2));
+    transition: transform 0.3s ease;
+}
+
+.idcs-logo-container:hover {
+    transform: scale(1.05);
+}
+
+.glass-box {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 18px;
+    padding: 2.8rem;
+    margin-top: 10px;
+    box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5);
+    will-change: backdrop-filter;
 }
 
 /* Card Components */

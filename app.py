@@ -1,17 +1,17 @@
-import streamlit as st
+import streamlit as st # pyre-ignore[21]
 import json
-import requests
-import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
-from data_handler import process_and_group_inflows, summarize_data
+import requests # pyre-ignore[21]
+import pandas as pd # pyre-ignore[21]
+import plotly.graph_objects as go # pyre-ignore[21]
+import plotly.express as px # pyre-ignore[21]
+from data_handler import process_and_group_inflows, summarize_data # pyre-ignore[21]
 import os
-from pdf_generator import generate_stability_passport, submit_to_provider_api
+from pdf_generator import generate_stability_passport, submit_to_provider_api # pyre-ignore[21]
 import time
 from datetime import datetime
-from engine import IDCS_Engine, calculate_custom_premium
+from engine import IDCS_Engine, calculate_custom_premium # pyre-ignore[21]
 import sqlite3
-import bcrypt
+import bcrypt # pyre-ignore[21]
 import logging
 
 # --- 0. Privacy & Security Defaults ---
@@ -41,9 +41,43 @@ def load_idcs_model():
     log_event("Model Training Successful")
     return IDCS_Engine()
 
+import base64
+
+@st.cache_resource
+def set_idcs_login_branding():
+    """Injects cinematic Nairobi pictorial branding for login."""
+    img_path = "/media/smilee/64 GB/new/myrepo/assets/logo_pictorial.webp"
+    if os.path.exists(img_path):
+        with open(img_path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode()
+        st.markdown(f"""
+            <style>
+            .stApp {{
+                background: linear-gradient(to right, rgba(0,0,0,0.8), rgba(0,0,0,0)), 
+                            url("data:image/webp;base64,{encoded}");
+                background-size: cover;
+                background-attachment: fixed;
+                background-position: center;
+            }}
+            </style>
+            """, unsafe_allow_html=True)
+
+def set_idcs_dashboard_branding():
+    """Reverts to high-performance dark theme background for the dashboard."""
+    st.markdown("""
+        <style>
+        .stApp {
+            background: #0e1117 !important;
+            background-image: none !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
 st.set_page_config(page_title="IDCS Dashboard", page_icon="🏦", layout="wide")
 verify_encryption()
+
+if not os.path.exists(".streamlit/secrets.toml"):
+    st.warning("⚠️ Secrets file (`.streamlit/secrets.toml`) missing! Please initialize it for AI features.")
 
 # -- SESSION STATE INIT --
 if "live_mu" not in st.session_state:
@@ -66,6 +100,12 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "temp_paths" not in st.session_state:
     st.session_state.temp_paths = []
+
+# -- BRANDING INJECTION (Conditional) --
+if not st.session_state.logged_in:
+    set_idcs_login_branding()
+else:
+    set_idcs_dashboard_branding()
 
 # Inject Custom CSS
 
@@ -272,13 +312,16 @@ if not st.session_state.logged_in:
         login_col1, login_col2 = st.columns([1, 1], gap="large")
         
         with login_col1:
+            st.markdown('<div class="idcs-logo-container">', unsafe_allow_html=True)
             try:
-                st.image("financial_stability.png", use_container_width=True)
+                st.image("idcs_logo.png", use_container_width=True)
             except Exception:
-                # Fallback if image not copied correctly
-                st.info("Hero Image Location")
+                # Fallback
+                st.info("IDCS Portal")
+            st.markdown('</div>', unsafe_allow_html=True)
                 
         with login_col2:
+            st.markdown('<div class="glass-box">', unsafe_allow_html=True)
             st.markdown("<h2 style='color: #e0e0e0; font-weight: 700; margin-bottom: 0px;'>Welcome Back</h2>", unsafe_allow_html=True)
             st.markdown("<p style='color: #9e9e9e; margin-bottom: 30px;'>Sign in to access your IDCS dashboard.</p>", unsafe_allow_html=True)
             
@@ -342,11 +385,15 @@ if not st.session_state.logged_in:
                     
             st.markdown("<hr style='border: 0; border-top: 1px solid #333; margin: 30px 0;'>", unsafe_allow_html=True)
             st.markdown("<div style='text-align: center; font-size: 12px; color: #666;'><span title='Secure Connection'>🔒</span> Your data is encrypted and stored locally.</div>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True) # Closing glass-box
     
     st.stop()
 
-from ai_component import inject_ai_assistant
+from ai_component import inject_ai_assistant # pyre-ignore[21]
 inject_ai_assistant()
+
+# -- DASHBOARD TOP BANNER --
+st.image("idcs_banner.webp", use_container_width=True, caption="IDCS: Kenyan Workforce Prosperity")
 
 # -- SIDEBAR --
 with st.sidebar:
@@ -361,7 +408,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 🩺 Vision Model Doctor")
     def list_available_models():
-        import google.generativeai as genai
+        import google.generativeai as genai # pyre-ignore[21]
         if "GEMINI_API_KEY" in st.secrets:
             try:
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
@@ -381,7 +428,7 @@ with st.sidebar:
     current_income = st.number_input("Current Month Income (KES)", min_value=0.0, step=1000.0, value=40000.0)
 
     # Initial Metric calculation for UI caps
-    import numpy as np
+    import numpy as np # pyre-ignore[21]
     st.session_state.dip_probability = 0
     if "financial_data" in st.session_state and st.session_state["financial_data"] is not None:
         df_fin = st.session_state["financial_data"]
@@ -564,12 +611,12 @@ with st.sidebar:
     
     if "financial_data" in st.session_state and st.session_state["financial_data"] is not None:
         df_fin = st.session_state["financial_data"]
-        unpaid_months = sum(df_fin.get('status', pd.Series(["Paid"]*len(df_fin))) == "Unpaid")
+        unpaid_months = int((df_fin.get('status', pd.Series(["Paid"]*len(df_fin))) == "Unpaid").sum()) # pyre-ignore[16]
         w_emp = 1.1 if st.session_state.get('employment_status') in ["Public Full-Time", "Private Contract"] else 1.0
         
         if live_mu > 0:
             s_base = 100 * (1 - (live_sigma / live_mu)) * w_emp
-            st.session_state.stability_score = max(0, min(100, s_base - (5 * unpaid_months)))
+            st.session_state.stability_score = float(max(0.0, min(100.0, float(s_base - (5 * unpaid_months))))) # pyre-ignore[6]
         else:
             st.session_state.stability_score = 0.0
     else:
@@ -588,8 +635,8 @@ with st.sidebar:
         ]
     }
     
-    if live_mu > 0 and current_income < (0.8 * live_mu):
-        gauge_config['threshold'] = {
+    if live_mu > 0 and current_income < (0.8 * live_mu): # pyre-ignore[58]
+        gauge_config['threshold'] = { # pyre-ignore[31]
             'line': {'color': "red", 'width': 4},
             'thickness': 0.75,
             'value': 80
@@ -640,14 +687,14 @@ with col1:
 with col2:
     bank_upload = st.file_uploader("Upload Bank Statement (CSV or PDF)", type=["csv", "pdf"], key="bank")
 
-from data_handler import process_and_group_inflows
+from data_handler import process_and_group_inflows # pyre-ignore[21]
 
 if st.button("🔄 Sync & Analyze Statement", type="primary"):
     if "GEMINI_API_KEY" not in st.secrets or st.secrets["GEMINI_API_KEY"] == "YOUR_KEY_HERE":
         st.error("Missing GEMINI_API_KEY in .streamlit/secrets.toml. Please add it to proceed with Vision Processing.")
         st.stop()
         
-    with st.spinner("Vision Processing... (Extracting Money In via Gemini 2.5 Flash)"):
+    with st.spinner("Vision Processing... (Analyzing Income Deficiency Compensation logic via Gemini 2.5 Flash)"):
         try:
             # Rule 1: Data Volatility - Track temp files
             temp_paths = []
@@ -752,7 +799,7 @@ if "raw_income_data" in st.session_state and st.session_state["raw_income_data"]
     # Rule 1: ENFORCE DATA VOLATILITY
     for temp_path in st.session_state.get('temp_paths', []):
         if os.path.exists(temp_path):
-            os.remove(temp_path)
+            os.remove(str(temp_path)) # pyre-ignore[6]
     st.session_state.temp_paths = []
     
     # 3. Fix the Variance Calculation
@@ -975,7 +1022,7 @@ if check_btn or st.session_state.get('last_user'):
                 # Header Micro-humanization
                 st.markdown(f"<h3 style='color: #fff; margin-bottom: 24px;'>Habari, {user['name']}. Let's check your income health today.</h3>", unsafe_allow_html=True)
                 
-                from engine import INSURANCE_SCHEMES, calculate_match_score
+                from engine import INSURANCE_SCHEMES, calculate_match_score # pyre-ignore[21]
                 
                 user_profile = {
                     'employment_status': st.session_state.get('employment_status', ''),
@@ -996,7 +1043,7 @@ if check_btn or st.session_state.get('last_user'):
                     })
                     
                 scored_schemes = sorted(scored_schemes, key=lambda x: x['Match Score'], reverse=True)
-                top_matches_str = ", ".join([f"{s['Scheme Name']} ({s['Match Score']}%)" for s in scored_schemes[:2]])
+                top_matches_str = ", ".join([f"{s['Scheme Name']} ({s['Match Score']}%)" for s in scored_schemes[0:2]]) # pyre-ignore[6]
                 
                 # Context integration for AI (Passed from Python Backend to Client-side Window Context)
                 # Context integration for AI (Passed from Python Backend to Client-side Window Context)
@@ -1072,17 +1119,17 @@ if check_btn or st.session_state.get('last_user'):
                         thresholds = [thresh] * len(months)
                         
                         fig = go.Figure()
-                        fig.add_trace(go.Scatter(x=months, y=actuals, mode='lines+markers', name='Actual Income', line=dict(color='#00d296', width=4), marker=dict(size=10)))
-                        fig.add_trace(go.Scatter(x=months, y=thresholds, mode='lines', name='Stability Threshold (0.8\u03bc)', line=dict(color='#ff4b4b', width=2, dash='dash')))
+                        fig.add_trace(go.Scatter(x=months, y=actuals, mode='lines+markers', name='Actual Income', line=dict(color='#00d296', width=4), marker=dict(size=10))) # pyre-ignore[6]
+                        fig.add_trace(go.Scatter(x=months, y=thresholds, mode='lines', name='Stability Threshold (0.8\u03bc)', line=dict(color='#ff4b4b', width=2, dash='dash'))) # pyre-ignore[6]
                         
                         fig.update_layout(
                             plot_bgcolor='rgba(0,0,0,0)',
                             paper_bgcolor='rgba(0,0,0,0)',
-                            font=dict(color='#e0e0e0', family='Inter'),
-                            xaxis=dict(showgrid=True, gridcolor='#2a2a2a'),
-                            yaxis=dict(showgrid=True, gridcolor='#2a2a2a', title="Income (KES)"),
-                            margin=dict(l=20, r=20, t=30, b=20),
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                            font=dict(color='#e0e0e0', family='Inter'), # pyre-ignore[6]
+                            xaxis=dict(showgrid=True, gridcolor='#2a2a2a'), # pyre-ignore[6]
+                            yaxis=dict(showgrid=True, gridcolor='#2a2a2a', title="Income (KES)"), # pyre-ignore[6]
+                            margin=dict(l=20, r=20, t=30, b=20), # pyre-ignore[6]
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1) # pyre-ignore[6]
                         )
                         st.plotly_chart(fig, width='stretch')
                     else:
@@ -1180,4 +1227,4 @@ else:
     st.info("👈 Enter your Full Name in the sidebar and evaluate to load data.")
 
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #666; font-size: 12px;'>IDCS is an AI brokerage tool. Data processing complies with the Kenya Data Protection Act.</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; color: #666; font-size: 12px;'>IDCS (Income Deficiency Compensation System) is an AI brokerage tool. Data processing complies with the Kenya Data Protection Act.</div>", unsafe_allow_html=True)

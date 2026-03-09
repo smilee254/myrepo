@@ -10,3 +10,4 @@ pdfplumber
 tabula-py
 prophet
 bcrypt
+passlib[bcrypt]
