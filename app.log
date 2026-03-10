@@ -1,0 +1,105 @@
+2026-03-09 21:08:13,035 - New user registered and logged in
+2026-03-09 21:08:13,707 - Chromium init'ed with kwargs {}
+2026-03-09 21:08:13,711 - Found chromium path: /usr/bin/google-chrome
+2026-03-09 21:08:13,713 - Temp directory created: /tmp/tmpsxj076m2.
+2026-03-09 21:08:13,715 - Opening browser.
+2026-03-09 21:08:13,717 - Temp directory created: /tmp/tmpx8qb5_ig.
+2026-03-09 21:08:13,753 - ldd failed. e: Command '['ldd', '/usr/bin/google-chrome']' returned non-zero exit status 1., stderr: None
+2026-03-09 21:08:13,754 - Temporary directory at: /tmp/tmpx8qb5_ig
+2026-03-09 21:08:17,662 - Conforming 1 to file:///tmp/tmpsxj076m2/index.html
+2026-03-09 21:08:17,662 - Waiting on all navigates
+2026-03-09 21:08:22,521 - All navigates done, putting them all in queue.
+2026-03-09 21:08:22,529 - Getting tab from queue (has 1)
+2026-03-09 21:08:22,531 - Got 387C
+2026-03-09 21:08:22,531 - Processing fig.png
+2026-03-09 21:08:22,532 - Sending big command for fig.png.
+2026-03-09 21:08:22,704 - Sent big command for fig.png.
+2026-03-09 21:08:22,706 - Reloading tab 387C before return.
+2026-03-09 21:08:23,047 - Putting tab 387C back (queue size: 0).
+2026-03-09 21:08:23,049 - Waiting for all cleanups to finish.
+2026-03-09 21:08:23,051 - Exiting Kaleido
+2026-03-09 21:08:23,052 - Closing browser.
+2026-03-09 21:08:23,096 - Closing browser.
+2026-03-09 21:08:23,098 - TemporaryDirectory.cleanup() worked.
+2026-03-09 21:08:23,098 - shutil.rmtree worked.
+2026-03-09 21:08:23,099 - Cancelling tasks.
+2026-03-09 21:08:23,099 - Exiting Kaleido/Choreo
+2026-03-09 21:08:23,405 - TemporaryDirectory.cleanup() worked.
+2026-03-09 21:08:23,406 - shutil.rmtree worked.
+2026-03-09 21:08:23,406 - TemporaryDirectory.cleanup() worked.
+2026-03-09 21:08:23,407 - shutil.rmtree worked.
+2026-03-09 21:08:23,407 - Cancelling tasks.
+2026-03-09 21:08:23,407 - Exiting Kaleido/Choreo
+2026-03-09 21:08:23,756 - TemporaryDirectory.cleanup() worked.
+2026-03-09 21:08:23,759 - shutil.rmtree worked.
+2026-03-09 21:25:26,149 - Chromium init'ed with kwargs {}
+2026-03-09 21:25:26,152 - Found chromium path: /usr/bin/google-chrome
+2026-03-09 21:25:26,152 - Temp directory created: /tmp/tmpw3sl6gp7.
+2026-03-09 21:25:26,153 - Opening browser.
+2026-03-09 21:25:26,156 - Temp directory created: /tmp/tmp9uwoe0w8.
+2026-03-09 21:25:26,191 - ldd failed. e: Command '['ldd', '/usr/bin/google-chrome']' returned non-zero exit status 1., stderr: None
+2026-03-09 21:25:26,197 - Temporary directory at: /tmp/tmp9uwoe0w8
+2026-03-09 21:25:27,784 - Chromium init'ed with kwargs {}
+2026-03-09 21:25:27,794 - Found chromium path: /usr/bin/google-chrome
+2026-03-09 21:25:27,817 - Temp directory created: /tmp/tmpwyq6159b.
+2026-03-09 21:25:27,822 - Opening browser.
+2026-03-09 21:25:27,839 - Temp directory created: /tmp/tmpy565hgzl.
+2026-03-09 21:25:27,922 - ldd failed. e: Command '['ldd', '/usr/bin/google-chrome']' returned non-zero exit status 1., stderr: None
+2026-03-09 21:25:27,923 - Temporary directory at: /tmp/tmpy565hgzl
+2026-03-09 21:25:28,630 - Conforming 1 to file:///tmp/tmpw3sl6gp7/index.html
+2026-03-09 21:25:28,630 - Waiting on all navigates
+2026-03-09 21:25:31,871 - Conforming 1 to file:///tmp/tmpwyq6159b/index.html
+2026-03-09 21:25:31,876 - Waiting on all navigates
+2026-03-09 21:25:35,059 - All navigates done, putting them all in queue.
+2026-03-09 21:25:35,060 - Getting tab from queue (has 1)
+2026-03-09 21:25:35,060 - Got 9182
+2026-03-09 21:25:35,061 - Processing fig.png
+2026-03-09 21:25:35,061 - Sending big command for fig.png.
+2026-03-09 21:25:35,298 - Sent big command for fig.png.
+2026-03-09 21:25:35,301 - Reloading tab 9182 before return.
+2026-03-09 21:25:35,910 - Putting tab 9182 back (queue size: 0).
+2026-03-09 21:25:35,912 - Waiting for all cleanups to finish.
+2026-03-09 21:25:35,912 - Exiting Kaleido
+2026-03-09 21:25:35,912 - Closing browser.
+2026-03-09 21:25:35,932 - Closing browser.
+2026-03-09 21:25:35,940 - TemporaryDirectory.cleanup() worked.
+2026-03-09 21:25:35,944 - shutil.rmtree worked.
+2026-03-09 21:25:35,945 - Cancelling tasks.
+2026-03-09 21:25:35,945 - Exiting Kaleido/Choreo
+2026-03-09 21:25:36,764 - TemporaryDirectory.cleanup() worked.
+2026-03-09 21:25:36,767 - shutil.rmtree worked.
+2026-03-09 21:25:36,769 - TemporaryDirectory.cleanup() worked.
+2026-03-09 21:25:36,771 - shutil.rmtree worked.
+2026-03-09 21:25:36,771 - Cancelling tasks.
+2026-03-09 21:25:36,771 - Exiting Kaleido/Choreo
+2026-03-09 21:25:37,278 - TemporaryDirectory.cleanup() worked.
+2026-03-09 21:25:37,278 - shutil.rmtree worked.
+2026-03-09 21:25:37,585 - All navigates done, putting them all in queue.
+2026-03-09 21:25:37,586 - Getting tab from queue (has 1)
+2026-03-09 21:25:37,586 - Got E9C9
+2026-03-09 21:25:37,586 - Processing fig.png
+2026-03-09 21:25:37,586 - Sending big command for fig.png.
+2026-03-09 21:25:37,758 - Sent big command for fig.png.
+2026-03-09 21:25:37,758 - Reloading tab E9C9 before return.
+2026-03-09 21:25:38,071 - Putting tab E9C9 back (queue size: 0).
+2026-03-09 21:25:38,073 - Waiting for all cleanups to finish.
+2026-03-09 21:25:38,073 - Exiting Kaleido
+2026-03-09 21:25:38,073 - Closing browser.
+2026-03-09 21:25:38,078 - Closing browser.
+2026-03-09 21:25:38,131 - TemporaryDirectory.cleanup() worked.
+2026-03-09 21:25:38,134 - shutil.rmtree worked.
+2026-03-09 21:25:38,138 - Cancelling tasks.
+2026-03-09 21:25:38,138 - Exiting Kaleido/Choreo
+2026-03-09 21:25:38,418 - TemporaryDirectory.cleanup() worked.
+2026-03-09 21:25:38,419 - shutil.rmtree worked.
+2026-03-09 21:25:38,419 - TemporaryDirectory.cleanup() worked.
+2026-03-09 21:25:38,420 - shutil.rmtree worked.
+2026-03-09 21:25:38,421 - Cancelling tasks.
+2026-03-09 21:25:38,421 - Exiting Kaleido/Choreo
+2026-03-09 21:25:38,733 - Upload Attempted
+2026-03-09 21:25:41,101 - TemporaryDirectory.cleanup() worked.
+2026-03-09 21:25:41,102 - shutil.rmtree worked.
+2026-03-09 21:27:04,178 - Model Training Successful
+2026-03-09 21:27:04,394 - n_changepoints greater than number of observations. Using 4.
+2026-03-09 21:27:04,404 - Chain [1] start processing
+2026-03-09 21:27:05,018 - Chain [1] done processing

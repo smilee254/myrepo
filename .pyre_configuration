@@ -1,10 +1,10 @@
 {
   "source_directories": [
-    "/media/smilee/64 GB/new/myrepo"
+    "."
   ],
   "search_path": [
-    "/media/smilee/64 GB/new/myrepo",
-    "/home/smilee/.virtualenvs/myrepo_isolated/lib/python3.12/site-packages"
+    "/home/smilee/idcs_venv/lib/python3.12/site-packages",
+    "/home/smilee/.local/lib/python3.12/site-packages"
   ],
   "exclude": [
     ".*/__pycache__/.*"

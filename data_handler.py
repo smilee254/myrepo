@@ -1,12 +1,12 @@
-import pandas as pd
-import pdfplumber
+import pandas as pd # pyre-ignore[21]
+import pdfplumber # pyre-ignore[21]
 import io
 import json
 import os
-import streamlit as st
+import streamlit as st # pyre-ignore[21]
 from typing import List, Optional, Dict
-from pydantic import BaseModel, Field, validator
-import google.generativeai as genai
+from pydantic import BaseModel, Field, validator # pyre-ignore[21]
+import google.generativeai as genai # pyre-ignore[21]
 from datetime import datetime
 
 # --- 1. Pydantic Models for Validation ---
@@ -80,20 +80,22 @@ class IncomeVisionExtractor:
             raise ValueError("Gemini API Key missing in st.secrets['GEMINI_API_KEY']")
 
         # Extract text for context
-        full_text = ""
+        full_texts: List[str] = []
         with pdfplumber.open(io.BytesIO(file_content)) as pdf:
             for page in pdf.pages:
                 text = page.extract_text()
                 if text:
-                    full_text += text + "\n--PAGE--\n"
+                    full_texts.append(str(text))
+        
+        full_text = "\n--PAGE--\n".join(full_texts)
 
-        prompt = """
+        prompt = f"""
         Analyze this bank/M-Pesa statement. Identify and extract ONLY 'Money In' (Credit/Deposits). 
         Ignore all 'Debit', 'Withdrawal', or 'Sent' transactions.
         Return a JSON list with 'date', 'amount', and 'description'.
         
         DOCUMENT CONTENT:
-        """ + full_text
+        {full_text}"""
 
         try:
             response = self.model.generate_content(prompt)
@@ -141,21 +143,26 @@ class IncomeVisionExtractor:
         except Exception as e:
             return f"Error generating summary: {e}"
 
+@st.cache_resource
+def get_extractor():
+    return IncomeVisionExtractor()
+
 # --- 3. Data Anchoring & Monthly Aggregation ---
 
-def process_and_group_inflows(mpesa_file=None, bank_file=None):
+@st.cache_data
+def process_and_group_inflows(mpesa_content: Optional[bytes] = None, bank_content: Optional[bytes] = None):
     """
     Main entry point for Dashboard.
     Groups 'amount' by month (YYYY-MM) and identifies missing months/Zero Income.
     Returns (DataFrame, monthly_inflow_dict, raw_list)
     """
-    extractor = IncomeVisionExtractor()
+    extractor = get_extractor()
     all_inflows = []
 
-    if mpesa_file:
-        all_inflows.extend(extractor.extract_inflows(mpesa_file.getvalue(), is_mpesa=True))
-    if bank_file:
-        all_inflows.extend(extractor.extract_inflows(bank_file.getvalue(), is_mpesa=False))
+    if mpesa_content:
+        all_inflows.extend(extractor.extract_inflows(mpesa_content, is_mpesa=True))
+    if bank_content:
+        all_inflows.extend(extractor.extract_inflows(bank_content, is_mpesa=False))
 
     if not all_inflows:
         return pd.DataFrame(), {}, []
@@ -184,5 +191,5 @@ def process_and_group_inflows(mpesa_file=None, bank_file=None):
 
 def summarize_data(raw_data: List[Dict]) -> str:
     """Standalone wrapper for UI calls."""
-    extractor = IncomeVisionExtractor()
+    extractor = get_extractor()
     return extractor.summarize_data(raw_data)

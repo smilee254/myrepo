@@ -11,3 +11,5 @@ tabula-py
 prophet
 bcrypt
 passlib[bcrypt]
+pydantic
+google-generativeai
